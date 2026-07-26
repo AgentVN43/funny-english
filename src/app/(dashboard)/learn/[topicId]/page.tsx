@@ -19,7 +19,12 @@ import {
   ArrowLeft,
   RotateCcw,
 } from "lucide-react";
-import { shuffleArray, speakText, speakCorrect, speakWrong } from "@/lib/utils";
+import {
+  shuffleArray,
+  speakText,
+  speakFeedback,
+  cancelSpeech,
+} from "@/lib/utils";
 import { PageContainer } from "@/components/MainLayout";
 
 const { Title, Text } = Typography;
@@ -37,6 +42,8 @@ export default function LearnPage() {
   const [sessionDone, setSessionDone] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
+  // Đang đọc phản hồi — chặn sang thẻ tiếp theo cho tới khi đọc xong
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -47,6 +54,9 @@ export default function LearnPage() {
       setUserId(session.user.id);
     });
   }, [router]);
+
+  // Dừng phát âm khi rời trang học
+  useEffect(() => cancelSpeech, []);
 
   useEffect(() => {
     if (!userId || !topicId) return;
@@ -80,16 +90,17 @@ export default function LearnPage() {
     setIsCorrect(correct);
     setShowResult(true);
 
-    if (correct) {
-      setScore((s) => ({ ...s, correct: s.correct + 1 }));
-      speakCorrect();
-    } else {
-      setScore((s) => ({ ...s, wrong: s.wrong + 1 }));
-      speakWrong();
-      setTimeout(() => speakText(currentCard.word), 800);
-      setTimeout(() => speakText(currentCard.word), 1600);
-      setTimeout(() => speakText(currentCard.word), 2400);
-    }
+    setScore((s) =>
+      correct
+        ? { ...s, correct: s.correct + 1 }
+        : { ...s, wrong: s.wrong + 1 }
+    );
+    // Khen/nhắc bằng tiếng Việt rồi đọc to từ vựng 3 lần cho cả đúng và sai.
+    // Nút "Tiếp theo" chỉ mở sau khi đọc xong.
+    setSpeaking(true);
+    speakFeedback(correct, currentCard.word, {
+      onDone: () => setSpeaking(false),
+    });
 
     if (userId) {
       try {
@@ -99,6 +110,7 @@ export default function LearnPage() {
   };
 
   const handleNext = () => {
+    if (speaking) return;
     if (currentIndex < cards.length - 1) {
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
@@ -114,6 +126,7 @@ export default function LearnPage() {
   };
 
   const restart = () => {
+    setSpeaking(false);
     setCurrentIndex(0);
     setScore({ correct: 0, wrong: 0 });
     setSessionDone(false);
@@ -326,16 +339,22 @@ export default function LearnPage() {
               );
             })}
 
-            {/* Next button */}
+            {/* Next button — chỉ bật sau khi đọc xong từ vựng */}
             {showResult && (
               <Button
                 type="primary"
                 size="large"
                 block
+                loading={speaking}
+                disabled={speaking}
                 onClick={handleNext}
                 className="h-12 rounded-xl text-base font-semibold mt-2 pop-in"
               >
-                {currentIndex < cards.length - 1 ? "Tiếp theo" : "Xem kết quả"}
+                {speaking
+                  ? "Đang đọc từ..."
+                  : currentIndex < cards.length - 1
+                    ? "Tiếp theo"
+                    : "Xem kết quả"}
               </Button>
             )}
           </div>
