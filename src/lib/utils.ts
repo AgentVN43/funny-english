@@ -40,8 +40,19 @@ function makeUtterance(text: string, lang: string, rate: number) {
   return utterance;
 }
 
-/** Huỷ mọi phát âm đang chờ — gọi khi chuyển thẻ hoặc rời trang */
+/**
+ * Số hiệu lượt đọc hiện tại. Tăng mỗi khi có yêu cầu huỷ hoặc bắt đầu lượt mới.
+ *
+ * Cần thiết vì `speechSynthesis.cancel()` làm trình duyệt bắn `end`/`error`
+ * cho câu đang đọc — mà đó chính là tín hiệu "đọc câu tiếp theo". Không có
+ * số hiệu này thì huỷ xong nó lại đọc tiếp câu sau, nút "Bỏ qua" vô tác dụng
+ * và loa vẫn đọc sau khi đã rời trang học.
+ */
+let speechGeneration = 0;
+
+/** Huỷ mọi phát âm đang chờ — gọi khi bỏ qua, chuyển thẻ hoặc rời trang */
 export function cancelSpeech() {
+  speechGeneration++;
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
 }
@@ -97,10 +108,12 @@ export function speakSequence(
   }
 
   cancelSpeech();
+  const generation = speechGeneration;
+  /** Lượt đọc này đã bị huỷ hoặc bị lượt mới thay thế */
+  const isStale = () => speechGeneration !== generation;
 
   let index = 0;
   let finished = false;
-  let watchdog: ReturnType<typeof setTimeout>;
 
   const finish = () => {
     if (finished) return;
@@ -109,13 +122,29 @@ export function speakSequence(
     onDone?.();
   };
 
-  watchdog = setTimeout(finish, watchdogMs(queue, gapMs));
+  /**
+   * Dừng hẳn mà KHÔNG gọi `onDone`: lượt này đã bị huỷ nên bên gọi hoặc đã tự
+   * mở khoá giao diện (bấm Bỏ qua), hoặc đang chờ lượt mới báo xong. Gọi
+   * `onDone` ở đây sẽ mở khoá nhầm cho lượt đọc kế tiếp.
+   */
+  const abort = () => {
+    finished = true;
+    clearTimeout(watchdog);
+  };
+
+  const watchdog = setTimeout(() => {
+    if (isStale()) abort();
+    else finish();
+  }, watchdogMs(queue, gapMs));
 
   const speakNext = () => {
+    if (isStale()) return abort();
     const { text, lang = "en-US", rate = 0.9 } = queue[index];
     index += 1;
     const utterance = makeUtterance(text, lang, rate);
     const advance = () => {
+      // Huỷ giữa chừng cũng bắn end/error — phải dừng, không đọc tiếp
+      if (isStale()) return abort();
       if (index < queue.length) setTimeout(speakNext, gapMs);
       else finish();
     };
