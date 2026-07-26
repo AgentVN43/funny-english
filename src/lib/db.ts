@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import { DEFAULT_CARDS_PER_SESSION, MASTERY_STREAK } from "./constants";
+import type { CardProgress } from "./session";
 import type { Category, Topic, Card, Progress, UserSettings } from "./types";
 
 // Categories (nhóm cấp cao)
@@ -85,6 +87,47 @@ export async function getCards(topicId?: string) {
   return data as Card[];
 }
 
+/**
+ * Thẻ mượn từ chủ đề khác để bổ sung đáp án nhiễu khi chủ đề hiện tại có quá
+ * ít thẻ để dựng đủ 4 lựa chọn.
+ *
+ * Ưu tiên chủ đề cùng nhóm cho sát chủ điểm. Nhưng chủ đề có thể chưa được
+ * gán nhóm (`category_id` rỗng) hoặc nhóm không còn thẻ nào — khi đó vẫn phải
+ * mượn từ chủ đề bất kỳ, vì thà nhiễu lệch chủ điểm còn hơn để lộ đáp án
+ * đúng do chỉ hiện được 1-2 lựa chọn.
+ */
+export async function getExtraDistractorCards(topicId: string, limit = 60) {
+  const { data: topic } = await supabase
+    .from("topics")
+    .select("category_id")
+    .eq("id", topicId)
+    .maybeSingle();
+
+  if (topic?.category_id) {
+    const { data: siblings } = await supabase
+      .from("topics")
+      .select("id")
+      .eq("category_id", topic.category_id)
+      .neq("id", topicId);
+    const siblingIds = (siblings ?? []).map((t) => t.id);
+    if (siblingIds.length > 0) {
+      const { data } = await supabase
+        .from("cards")
+        .select("*")
+        .in("topic_id", siblingIds)
+        .limit(limit);
+      if (data && data.length > 0) return data as Card[];
+    }
+  }
+
+  const { data } = await supabase
+    .from("cards")
+    .select("*")
+    .neq("topic_id", topicId)
+    .limit(limit);
+  return (data ?? []) as Card[];
+}
+
 export async function getCardById(id: string) {
   const { data, error } = await supabase
     .from("cards")
@@ -136,6 +179,19 @@ export async function getProgress(userId: string) {
   return data;
 }
 
+/** Tiến độ của user với riêng các thẻ thuộc một chủ đề */
+export async function getTopicProgress(userId: string, topicId: string) {
+  const { data, error } = await supabase
+    .from("progress")
+    .select(
+      "card_id, streak, correct_count, wrong_count, last_reviewed, cards!inner(topic_id)"
+    )
+    .eq("user_id", userId)
+    .eq("cards.topic_id", topicId);
+  if (error) throw error;
+  return (data ?? []) as unknown as CardProgress[];
+}
+
 export async function upsertProgress(
   userId: string,
   cardId: string,
@@ -151,7 +207,7 @@ export async function upsertProgress(
   const correct_count = (existing?.correct_count || 0) + (isCorrect ? 1 : 0);
   const wrong_count = (existing?.wrong_count || 0) + (isCorrect ? 0 : 1);
   const streak = isCorrect ? (existing?.streak || 0) + 1 : 0;
-  const status = streak >= 3 ? "mastered" : "learning";
+  const status = streak >= MASTERY_STREAK ? "mastered" : "learning";
 
   const { data, error } = await supabase
     .from("progress")
@@ -174,24 +230,36 @@ export async function upsertProgress(
 }
 
 // User Settings
-export async function getUserSettings(userId: string) {
+
+/**
+ * Trả về cài đặt mặc định thay vì ném lỗi khi user chưa có dòng trong
+ * `user_settings` (trigger tạo profile không chạy, hoặc tài khoản tạo từ
+ * trước khi có trigger) — trước đây trường hợp này làm trang học treo mãi.
+ */
+export async function getUserSettings(userId: string): Promise<UserSettings> {
   const { data, error } = await supabase
     .from("user_settings")
     .select("*")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   if (error) throw error;
-  return data as UserSettings;
+  if (data) return data as UserSettings;
+  return {
+    user_id: userId,
+    cards_per_session: DEFAULT_CARDS_PER_SESSION,
+    created_at: "",
+    updated_at: "",
+  };
 }
 
 export async function updateUserSettings(
   userId: string,
   cards_per_session: number
 ) {
+  // upsert để tự tạo dòng nếu user chưa có cài đặt
   const { data, error } = await supabase
     .from("user_settings")
-    .update({ cards_per_session })
-    .eq("user_id", userId)
+    .upsert({ user_id: userId, cards_per_session }, { onConflict: "user_id" })
     .select()
     .single();
   if (error) throw error;

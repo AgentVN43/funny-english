@@ -7,6 +7,7 @@ import { getProgress } from "@/lib/db";
 import { Typography, Spin, Empty, message } from "antd";
 import { ChevronDown, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
 import { PageContainer } from "@/components/MainLayout";
+import { isMastered } from "@/lib/constants";
 
 const { Title, Text } = Typography;
 
@@ -103,7 +104,9 @@ export default function ProgressPage() {
         <div className="space-y-3">
           {grouped.map((group) => {
             const isOpen = expanded[group.topicId] ?? false;
-            const masteredCount = group.items.filter((i) => i.streak >= 3).length;
+            const masteredCount = group.items.filter((i) =>
+              isMastered(i.streak)
+            ).length;
             return (
               <div key={group.topicId}>
                 {/* Topic header */}

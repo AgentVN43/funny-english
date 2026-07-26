@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getCategories, getTopics, getCards, getProgress } from "@/lib/db";
 import type { Category, Topic, Card } from "@/lib/types";
+import { isMastered } from "@/lib/constants";
 import { Typography, Spin, Empty, Carousel, Button, message } from "antd";
 import {
   ChevronRight,
@@ -103,7 +104,7 @@ export default function HomePage() {
 
         const masteredByTopic: Record<string, number> = {};
         progress.forEach((p) => {
-          if (p.streak >= 3) {
+          if (isMastered(p.streak)) {
             const tId = p.cards?.topic_id;
             if (tId) {
               masteredByTopic[tId] = (masteredByTopic[tId] || 0) + 1;
