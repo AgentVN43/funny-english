@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trophy,
   LogOut,
+  LogIn,
   Mail,
   Phone,
 } from "lucide-react";
@@ -60,22 +61,23 @@ export default function HomePage() {
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [topicCount, setTopicCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [authed, setAuthed] = useState(false);
   const [topicStatus, setTopicStatus] = useState<
     Record<string, { total: number; mastered: number }>
   >({});
 
   useEffect(() => {
+    // Khách chưa đăng nhập vẫn xem được danh sách chủ đề
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) {
-        router.replace("/");
-        return;
-      }
+      setAuthed(!!session);
       try {
         const [cats, tops, allCards, progress] = await Promise.all([
           getCategories(),
           getTopics(),
           getCards(),
-          getProgress(session.user.id) as Promise<ProgressItem[]>,
+          session
+            ? (getProgress(session.user.id) as Promise<ProgressItem[]>)
+            : Promise.resolve([] as ProgressItem[]),
         ]);
 
         // Nhóm topics theo category
@@ -123,12 +125,22 @@ export default function HomePage() {
         setLoading(false);
       }
     });
-  }, [router]);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     message.success("Đã đăng xuất");
-    router.push("/");
+    setAuthed(false);
+    router.refresh();
+  };
+
+  /** Chỉ cho vào học khi đã đăng nhập */
+  const openTopic = (topicId: string) => {
+    if (!authed) {
+      router.push(`/login?redirect=${encodeURIComponent(`/learn/${topicId}`)}`);
+      return;
+    }
+    router.push(`/learn/${topicId}`);
   };
 
   if (loading) {
@@ -170,14 +182,25 @@ export default function HomePage() {
               Liên hệ
             </a>
           </div>
-          <Button
-            type="text"
-            danger
-            icon={<LogOut size={16} />}
-            onClick={handleLogout}
-          >
-            Đăng xuất
-          </Button>
+          {authed ? (
+            <Button
+              type="text"
+              danger
+              icon={<LogOut size={16} />}
+              onClick={handleLogout}
+            >
+              Đăng xuất
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              icon={<LogIn size={16} />}
+              onClick={() => router.push("/login")}
+              className="rounded-xl"
+            >
+              Đăng nhập
+            </Button>
+          )}
         </div>
       </nav>
 
@@ -240,11 +263,22 @@ export default function HomePage() {
               <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-5">
                 {group.topics.map((topic) => {
                   const st = topicStatus[topic.id];
-                  const isMastered = st && st.total > 0 && st.mastered === st.total;
+                  const isMastered =
+                    authed && st && st.total > 0 && st.mastered === st.total;
+                  // Khách chưa đăng nhập: hiện số từ, không hiện tiến độ
+                  const subtitle = !authed
+                    ? st && st.total > 0
+                      ? `${st.total} từ vựng`
+                      : topic.description || "Học từ vựng theo chủ đề"
+                    : st
+                      ? isMastered
+                        ? "Đã thuộc"
+                        : `${st.mastered}/${st.total} từ đã thuộc`
+                      : topic.description || "Học từ vựng theo chủ đề";
                   return (
                     <div
                       key={topic.id}
-                      onClick={() => router.push(`/learn/${topic.id}`)}
+                      onClick={() => openTopic(topic.id)}
                       className="bg-white rounded-2xl shadow-sm p-4 lg:p-6 flex items-center justify-between active:bg-gray-50 cursor-pointer transition-shadow hover:shadow-md"
                     >
                       <div className="flex items-center gap-3">
@@ -264,11 +298,7 @@ export default function HomePage() {
                             {topic.name}
                           </Text>
                           <Text type="secondary" className="text-sm">
-                            {st
-                              ? isMastered
-                                ? "Đã thuộc"
-                                : `${st.mastered}/${st.total} từ đã thuộc`
-                              : topic.description || "Học từ vựng theo chủ đề"}
+                            {subtitle}
                           </Text>
                         </div>
                       </div>

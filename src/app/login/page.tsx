@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   loginWithPhone,
@@ -8,14 +8,22 @@ import {
   isValidPhone,
   DEFAULT_PASSWORD,
 } from "@/lib/auth";
-import { Button, Card, Input, Typography, message, Divider } from "antd";
+import { Button, Card, Input, Typography, message, Divider, Spin } from "antd";
 import { BookOpen, Phone, Lock, ArrowLeft } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const { Title, Text } = Typography;
 
-export default function LoginPage() {
+/** Chỉ cho phép đường dẫn nội bộ để tránh open redirect */
+function safeRedirect(value: string | null): string | null {
+  if (!value) return null;
+  return value.startsWith("/") && !value.startsWith("//") ? value : null;
+}
+
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = safeRedirect(searchParams.get("redirect"));
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -64,10 +72,13 @@ export default function LoginPage() {
     }
 
     message.success("Đăng nhập thành công!");
-    if (role === "admin") {
-      router.push("/admin/categories");
+    // Ưu tiên quay lại nơi user đang muốn vào (VD: chủ đề vừa bấm)
+    if (redirectTo) {
+      router.replace(redirectTo);
+    } else if (role === "admin") {
+      router.replace("/admin/categories");
     } else {
-      router.push("/home");
+      router.replace("/home");
     }
   };
 
@@ -109,7 +120,7 @@ export default function LoginPage() {
           <Button
             type="text"
             icon={<ArrowLeft size={18} />}
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/home")}
             className="mb-2"
           />
           <div className="flex justify-center mb-2">
@@ -177,5 +188,19 @@ export default function LoginPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-dvh bg-gradient-to-br from-indigo-500 to-purple-600">
+          <Spin size="large" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -47,13 +47,16 @@ export default function LearnPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // Vào học bắt buộc đăng nhập — quay lại đúng chủ đề sau khi đăng nhập
       if (!session) {
-        router.replace("/");
+        router.replace(
+          `/login?redirect=${encodeURIComponent(`/learn/${topicId}`)}`
+        );
         return;
       }
       setUserId(session.user.id);
     });
-  }, [router]);
+  }, [router, topicId]);
 
   // Dừng phát âm khi rời trang học
   useEffect(() => cancelSpeech, []);

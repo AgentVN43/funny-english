@@ -44,7 +44,7 @@ export default function ProgressPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
-        router.replace("/");
+        router.replace("/login?redirect=%2Fprogress");
         return;
       }
       setUserId(session.user.id);

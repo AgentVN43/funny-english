@@ -15,6 +15,8 @@ import {
   Layers,
   Newspaper,
   FolderTree,
+  LogIn,
+  User as UserIcon,
 } from "lucide-react";
 
 const { Text } = Typography;
@@ -24,6 +26,8 @@ interface NavItem {
   icon: React.ReactNode;
   path: string;
   adminOnly?: boolean;
+  /** Chỉ hiện khi đã đăng nhập */
+  authOnly?: boolean;
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -31,14 +35,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<{ email: string; role: string } | null>(null);
+  const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      // Khách chưa đăng nhập vẫn xem được trang chủ — không đẩy ra ngoài
       if (!session) {
-        router.replace("/");
+        setLoading(false);
         return;
       }
+      setAuthed(true);
       try {
         const { data } = await supabase
           .from("profiles")
@@ -52,26 +59,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
-  }, [router]);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     message.success("Đã đăng xuất");
-    router.push("/");
+    setAuthed(false);
+    setProfile(null);
+    setOpen(false);
+    router.push("/home");
   };
 
   const navItems: NavItem[] = [
     { label: "Trang chủ", icon: <Home size={20} />, path: "/home" },
-    { label: "Tiến độ", icon: <BarChart3 size={20} />, path: "/progress" },
-    { label: "Cài đặt", icon: <Settings size={20} />, path: "/settings" },
+    { label: "Tiến độ", icon: <BarChart3 size={20} />, path: "/progress", authOnly: true },
+    { label: "Cài đặt", icon: <Settings size={20} />, path: "/settings", authOnly: true },
     { label: "Quản lý Categories", icon: <FolderTree size={20} />, path: "/admin/categories", adminOnly: true },
     { label: "Quản lý Chủ đề", icon: <Layers size={20} />, path: "/admin/topics", adminOnly: true },
     { label: "Quản lý Thẻ", icon: <Newspaper size={20} />, path: "/admin/cards", adminOnly: true },
   ];
 
-  const filteredNav = navItems.filter(
-    (item) => !item.adminOnly || profile?.role === "admin"
-  );
+  const filteredNav = navItems.filter((item) => {
+    if (item.adminOnly) return profile?.role === "admin";
+    if (item.authOnly) return authed;
+    return true;
+  });
 
   if (loading) {
     return <div className="min-h-dvh bg-gray-50">{children}</div>;
@@ -104,21 +116,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {profile?.role === "user" && (
+            {authed ? (
+              <>
+                {profile?.role === "user" && (
+                  <Button
+                    type="text"
+                    icon={<Settings size={20} />}
+                    onClick={() => router.push("/settings")}
+                    className="min-w-[44px] min-h-[44px]"
+                  />
+                )}
+                <Avatar
+                  size="small"
+                  className="bg-indigo-500 cursor-pointer"
+                  onClick={() => setOpen(true)}
+                >
+                  {profile?.email?.[0]?.toUpperCase() || "U"}
+                </Avatar>
+              </>
+            ) : (
               <Button
-                type="text"
-                icon={<Settings size={20} />}
-                onClick={() => router.push("/settings")}
-                className="min-w-[44px] min-h-[44px]"
-              />
+                type="primary"
+                icon={<LogIn size={16} />}
+                onClick={() => router.push("/login")}
+                className="rounded-xl"
+              >
+                Đăng nhập
+              </Button>
             )}
-            <Avatar
-              size="small"
-              className="bg-indigo-500 cursor-pointer"
-              onClick={() => setOpen(true)}
-            >
-              {profile?.email?.[0]?.toUpperCase() || "U"}
-            </Avatar>
           </div>
         </div>
       </div>
@@ -126,19 +151,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Drawer */}
       <Drawer
         title={
-          <div className="flex items-center gap-2">
-            <Avatar className="bg-indigo-500">
-              {profile?.email?.[0]?.toUpperCase() || "U"}
-            </Avatar>
-            <div>
-              <Text strong className="block text-sm">
-                {emailToPhone(profile?.email) || "User"}
-              </Text>
-              <Text type="secondary" className="text-xs">
-                {profile?.role === "admin" ? "Admin" : "Học viên"}
+          authed ? (
+            <div className="flex items-center gap-2">
+              <Avatar className="bg-indigo-500">
+                {profile?.email?.[0]?.toUpperCase() || "U"}
+              </Avatar>
+              <div>
+                <Text strong className="block text-sm">
+                  {emailToPhone(profile?.email) || "User"}
+                </Text>
+                <Text type="secondary" className="text-xs">
+                  {profile?.role === "admin" ? "Admin" : "Học viên"}
+                </Text>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Avatar className="bg-gray-300">
+                <UserIcon size={16} />
+              </Avatar>
+              <Text type="secondary" className="text-sm">
+                Chưa đăng nhập
               </Text>
             </div>
-          </div>
+          )
         }
         placement="left"
         onClose={() => setOpen(false)}
@@ -165,13 +201,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           ))}
           <Divider className="my-2" />
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-6 py-3.5 text-left text-red-500 hover:bg-red-50 transition-colors min-h-[48px]"
-          >
-            <LogOut size={20} />
-            <span className="font-medium">Đăng xuất</span>
-          </button>
+          {authed ? (
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-6 py-3.5 text-left text-red-500 hover:bg-red-50 transition-colors min-h-[48px]"
+            >
+              <LogOut size={20} />
+              <span className="font-medium">Đăng xuất</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setOpen(false);
+                router.push("/login");
+              }}
+              className="w-full flex items-center gap-3 px-6 py-3.5 text-left text-indigo-600 hover:bg-indigo-50 transition-colors min-h-[48px]"
+            >
+              <LogIn size={20} />
+              <span className="font-medium">Đăng nhập</span>
+            </button>
+          )}
         </div>
       </Drawer>
 
