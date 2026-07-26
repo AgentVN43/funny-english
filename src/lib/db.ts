@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
-import type { Category, Card, Progress, UserSettings } from "./types";
+import type { Category, Topic, Card, Progress, UserSettings } from "./types";
 
-// Categories
+// Categories (nhóm cấp cao)
 export async function getCategories() {
   const { data, error } = await supabase
     .from("categories")
@@ -37,10 +37,49 @@ export async function deleteCategory(id: string) {
   if (error) throw error;
 }
 
-// Cards
-export async function getCards(categoryId?: string) {
-  let query = supabase.from("cards").select("*");
+// Topics (chủ đề)
+export async function getTopics(categoryId?: string) {
+  let query = supabase.from("topics").select("*");
   if (categoryId) query = query.eq("category_id", categoryId);
+  const { data, error } = await query.order("name");
+  if (error) throw error;
+  return data as Topic[];
+}
+
+export async function createTopic(
+  name: string,
+  description: string,
+  category_id: string | null
+) {
+  const { data, error } = await supabase
+    .from("topics")
+    .insert({ name, description, category_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Topic;
+}
+
+export async function updateTopic(id: string, updates: Partial<Topic>) {
+  const { data, error } = await supabase
+    .from("topics")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Topic;
+}
+
+export async function deleteTopic(id: string) {
+  const { error } = await supabase.from("topics").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Cards
+export async function getCards(topicId?: string) {
+  let query = supabase.from("cards").select("*");
+  if (topicId) query = query.eq("topic_id", topicId);
   const { data, error } = await query.order("word");
   if (error) throw error;
   return data as Card[];
@@ -57,14 +96,14 @@ export async function getCardById(id: string) {
 }
 
 export async function createCard(
-  category_id: string,
+  topic_id: string,
   word: string,
   meaning_vi: string,
   image: string
 ) {
   const { data, error } = await supabase
     .from("cards")
-    .insert({ category_id, word, meaning_vi, image })
+    .insert({ topic_id, word, meaning_vi, image })
     .select()
     .single();
   if (error) throw error;
@@ -91,7 +130,7 @@ export async function deleteCard(id: string) {
 export async function getProgress(userId: string) {
   const { data, error } = await supabase
     .from("progress")
-    .select("*, cards(*, categories(id, name))")
+    .select("*, cards(*, topics(id, name))")
     .eq("user_id", userId);
   if (error) throw error;
   return data;

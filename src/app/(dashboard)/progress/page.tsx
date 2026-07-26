@@ -20,17 +20,17 @@ interface ProgressItem {
   cards: {
     word: string;
     meaning_vi: string;
-    category_id: string;
-    categories: {
+    topic_id: string;
+    topics: {
       id: string;
       name: string;
     };
   };
 }
 
-interface CategoryGroup {
-  categoryId: string;
-  categoryName: string;
+interface TopicGroup {
+  topicId: string;
+  topicName: string;
   items: ProgressItem[];
 }
 
@@ -66,20 +66,20 @@ export default function ProgressPage() {
     })();
   }, [userId]);
 
-  const grouped: CategoryGroup[] = Object.values(
+  const grouped: TopicGroup[] = Object.values(
     progress.reduce((acc, item) => {
-      const catId = item.cards?.categories?.id || "unknown";
-      const catName = item.cards?.categories?.name || "Không có chủ đề";
-      if (!acc[catId]) {
-        acc[catId] = { categoryId: catId, categoryName: catName, items: [] };
+      const tId = item.cards?.topics?.id || "unknown";
+      const tName = item.cards?.topics?.name || "Không có chủ đề";
+      if (!acc[tId]) {
+        acc[tId] = { topicId: tId, topicName: tName, items: [] };
       }
-      acc[catId].items.push(item);
+      acc[tId].items.push(item);
       return acc;
-    }, {} as Record<string, CategoryGroup>)
+    }, {} as Record<string, TopicGroup>)
   );
 
-  const toggleExpand = (catId: string) => {
-    setExpanded((prev) => ({ ...prev, [catId]: !prev[catId] }));
+  const toggleExpand = (tId: string) => {
+    setExpanded((prev) => ({ ...prev, [tId]: !prev[tId] }));
   };
 
   if (loading) {
@@ -102,13 +102,13 @@ export default function ProgressPage() {
       ) : (
         <div className="space-y-3">
           {grouped.map((group) => {
-            const isOpen = expanded[group.categoryId] ?? false;
+            const isOpen = expanded[group.topicId] ?? false;
             const masteredCount = group.items.filter((i) => i.streak >= 3).length;
             return (
-              <div key={group.categoryId}>
-                {/* Category header */}
+              <div key={group.topicId}>
+                {/* Topic header */}
                 <button
-                  onClick={() => toggleExpand(group.categoryId)}
+                  onClick={() => toggleExpand(group.topicId)}
                   className="w-full flex items-center justify-between py-3 px-1 text-left"
                 >
                   <div className="flex items-center gap-2">
@@ -117,7 +117,7 @@ export default function ProgressPage() {
                     ) : (
                       <ChevronRight size={18} className="text-gray-500" />
                     )}
-                    <Text strong className="text-base">{group.categoryName}</Text>
+                    <Text strong className="text-base">{group.topicName}</Text>
                     <Text type="secondary" className="text-sm">
                       ({group.items.length} từ)
                     </Text>

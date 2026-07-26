@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getCards, createCard, updateCard, deleteCard, getCategories } from "@/lib/db";
-import type { Card, Category } from "@/lib/types";
+import { getCards, createCard, updateCard, deleteCard, getTopics } from "@/lib/db";
+import type { Card, Topic } from "@/lib/types";
 import {
   Button,
   Card as AntCard,
@@ -26,20 +26,20 @@ function AdminCardsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [cards, setCards] = useState<Card[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Card | null>(null);
   const [word, setWord] = useState("");
   const [meaningVi, setMeaningVi] = useState("");
   const [image, setImage] = useState("");
-  const [categoryId, setCategoryId] = useState(searchParams.get("category_id") || "");
-  const [filterCat, setFilterCat] = useState(searchParams.get("category_id") || "");
+  const [topicId, setTopicId] = useState(searchParams.get("topic_id") || "");
+  const [filterTopic, setFilterTopic] = useState(searchParams.get("topic_id") || "");
   const [saving, setSaving] = useState(false);
 
-  async function loadCards() {
+  async function loadCards(tId?: string) {
     try {
-      const data = await getCards(filterCat || undefined);
+      const data = await getCards(tId || undefined);
       setCards(data);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
@@ -64,32 +64,27 @@ function AdminCardsContent() {
         router.replace("/home");
         return;
       }
-      const cats = await getCategories();
-      setCategories(cats);
-      setLoading(false);
-      loadCards();
+      try {
+        const tps = await getTopics();
+        setTopics(tps);
+        await loadCards(filterTopic || undefined);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
-  useEffect(() => {
-    if (categories.length === 0) return;
-    (async () => {
-      try {
-        const data = await getCards(filterCat || undefined);
-        setCards(data);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Lỗi không xác định";
-        message.error("Lỗi tải dữ liệu: " + msg);
-      }
-    })();
-  }, [filterCat, categories.length]);
+  const handleFilterChange = (v: string) => {
+    setFilterTopic(v || "");
+    loadCards(v || undefined);
+  };
 
   const openCreate = () => {
     setEditing(null);
     setWord("");
     setMeaningVi("");
     setImage("");
-    setCategoryId(filterCat);
+    setTopicId(filterTopic);
     setDrawerOpen(true);
   };
 
@@ -98,12 +93,12 @@ function AdminCardsContent() {
     setWord(card.word);
     setMeaningVi(card.meaning_vi);
     setImage(card.image);
-    setCategoryId(card.category_id);
+    setTopicId(card.topic_id);
     setDrawerOpen(true);
   };
 
   const handleSave = async () => {
-    if (!word.trim() || !meaningVi.trim() || !categoryId) {
+    if (!word.trim() || !meaningVi.trim() || !topicId) {
       message.error("Vui lòng điền đầy đủ thông tin");
       return;
     }
@@ -114,15 +109,15 @@ function AdminCardsContent() {
           word: word.trim(),
           meaning_vi: meaningVi.trim(),
           image: image.trim(),
-          category_id: categoryId,
+          topic_id: topicId,
         });
         message.success("Đã cập nhật thẻ");
       } else {
-        await createCard(categoryId, word.trim(), meaningVi.trim(), image.trim());
+        await createCard(topicId, word.trim(), meaningVi.trim(), image.trim());
         message.success("Đã tạo thẻ mới");
       }
       setDrawerOpen(false);
-      loadCards();
+      loadCards(filterTopic || undefined);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
       message.error("Lỗi: " + msg);
@@ -135,7 +130,7 @@ function AdminCardsContent() {
     try {
       await deleteCard(id);
       message.success("Đã xóa thẻ");
-      loadCards();
+      loadCards(filterTopic || undefined);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
       message.error("Lỗi: " + msg);
@@ -169,15 +164,15 @@ function AdminCardsContent() {
 
       <div className="mb-4">
         <Select
-          value={filterCat}
-          onChange={(v) => setFilterCat(v || "")}
+          value={filterTopic}
+          onChange={handleFilterChange}
           placeholder="Lọc theo chủ đề"
           allowClear
           size="large"
           className="w-full rounded-xl"
           options={[
             { value: "", label: "Tất cả chủ đề" },
-            ...categories.map((c) => ({ value: c.id, label: c.name })),
+            ...topics.map((t) => ({ value: t.id, label: t.name })),
           ]}
         />
       </div>
@@ -202,7 +197,7 @@ function AdminCardsContent() {
                     {card.meaning_vi}
                   </Text>
                   <Text type="secondary" className="text-xs">
-                    {categories.find((c) => c.id === card.category_id)?.name || "Unknown"}
+                    {topics.find((t) => t.id === card.topic_id)?.name || "Unknown"}
                   </Text>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -250,12 +245,12 @@ function AdminCardsContent() {
           <div>
             <Text className="block mb-1 font-medium">Chủ đề</Text>
             <Select
-              value={categoryId}
-              onChange={(v) => setCategoryId(v)}
+              value={topicId || undefined}
+              onChange={(v) => setTopicId(v)}
               placeholder="Chọn chủ đề"
               size="large"
               className="w-full rounded-xl"
-              options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              options={topics.map((t) => ({ value: t.id, label: t.name }))}
             />
           </div>
           <div>

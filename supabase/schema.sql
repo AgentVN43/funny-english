@@ -11,9 +11,19 @@ CREATE TABLE profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Categories (chủ đề)
+-- Categories (nhóm cấp cao: "Tiếng anh tiểu học", "Tiếng anh giao tiếp"...)
 CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Topics (chủ đề: "40 câu thông dụng lớp 1"... thuộc 1 category)
+CREATE TABLE topics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   image TEXT DEFAULT '',
@@ -21,10 +31,10 @@ CREATE TABLE categories (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Cards (từ vựng)
+-- Cards (từ vựng, thuộc 1 topic)
 CREATE TABLE cards (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+  topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
   word TEXT NOT NULL,
   meaning_vi TEXT NOT NULL,
   image TEXT DEFAULT '',
@@ -69,6 +79,10 @@ CREATE TRIGGER update_profiles_updated_at
 
 CREATE TRIGGER update_categories_updated_at
   BEFORE UPDATE ON categories
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_topics_updated_at
+  BEFORE UPDATE ON topics
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_cards_updated_at
@@ -145,6 +159,25 @@ CREATE POLICY "Admins can update categories"
 
 CREATE POLICY "Admins can delete categories"
   ON categories FOR DELETE
+  USING (public.is_admin());
+
+-- Topics
+ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view topics"
+  ON topics FOR SELECT
+  USING (true);
+
+CREATE POLICY "Admins can insert topics"
+  ON topics FOR INSERT
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admins can update topics"
+  ON topics FOR UPDATE
+  USING (public.is_admin());
+
+CREATE POLICY "Admins can delete topics"
+  ON topics FOR DELETE
   USING (public.is_admin());
 
 -- Cards

@@ -7,8 +7,19 @@ export interface Profile {
   updated_at: string;
 }
 
+/** Nhóm cấp cao: "Tiếng anh tiểu học", "Tiếng anh giao tiếp"... */
 export interface Category {
   id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Chủ đề: "40 câu thông dụng lớp 1"... thuộc 1 category */
+export interface Topic {
+  id: string;
+  category_id: string | null;
   name: string;
   description: string;
   image: string;
@@ -18,7 +29,7 @@ export interface Category {
 
 export interface Card {
   id: string;
-  category_id: string;
+  topic_id: string;
   word: string;
   meaning_vi: string;
   image: string;

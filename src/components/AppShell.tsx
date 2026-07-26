@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { emailToPhone } from "@/lib/auth";
 import { Drawer, Button, Typography, Avatar, Divider, message } from "antd";
 import {
   Home,
@@ -13,6 +14,7 @@ import {
   Shield,
   Layers,
   Newspaper,
+  FolderTree,
 } from "lucide-react";
 
 const { Text } = Typography;
@@ -62,7 +64,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { label: "Trang chủ", icon: <Home size={20} />, path: "/home" },
     { label: "Tiến độ", icon: <BarChart3 size={20} />, path: "/progress" },
     { label: "Cài đặt", icon: <Settings size={20} />, path: "/settings" },
-    { label: "Quản lý Chủ đề", icon: <Layers size={20} />, path: "/admin/categories", adminOnly: true },
+    { label: "Quản lý Categories", icon: <FolderTree size={20} />, path: "/admin/categories", adminOnly: true },
+    { label: "Quản lý Chủ đề", icon: <Layers size={20} />, path: "/admin/topics", adminOnly: true },
     { label: "Quản lý Thẻ", icon: <Newspaper size={20} />, path: "/admin/cards", adminOnly: true },
   ];
 
@@ -76,9 +79,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-gray-50">
-      {/* Top bar - full width background, centered content */}
-      <div className="sticky top-0 z-50 bg-white border-b border-gray-200">
-        <div className="w-full max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+      {/* Top bar - mobile app bar; ẩn trên desktop tại /home (trang landing có navbar riêng) */}
+      <div
+        className={`sticky top-0 z-50 bg-white border-b border-gray-200 ${
+          pathname === "/home" ? "lg:hidden" : ""
+        }`}
+      >
+        <div className="w-full max-w-lg lg:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
               type="text"
@@ -125,7 +132,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Avatar>
             <div>
               <Text strong className="block text-sm">
-                {profile?.email || "User"}
+                {emailToPhone(profile?.email) || "User"}
               </Text>
               <Text type="secondary" className="text-xs">
                 {profile?.role === "admin" ? "Admin" : "Học viên"}

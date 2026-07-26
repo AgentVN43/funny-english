@@ -3,12 +3,22 @@
 export function PageContainer({
   children,
   className = "",
+  wide = false,
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Trang landing desktop: mở rộng max-width trên màn hình lớn */
+  wide?: boolean;
+  id?: string;
 }) {
   return (
-    <div className={`w-full max-w-lg mx-auto px-4 ${className}`}>
+    <div
+      id={id}
+      className={`w-full mx-auto px-4 ${
+        wide ? "max-w-lg lg:max-w-6xl" : "max-w-lg"
+      } ${className}`}
+    >
       {children}
     </div>
   );

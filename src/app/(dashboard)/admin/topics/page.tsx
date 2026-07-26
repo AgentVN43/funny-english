@@ -3,43 +3,51 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getCategories, createCategory, updateCategory, deleteCategory } from "@/lib/db";
-import type { Category } from "@/lib/types";
+import {
+  getCategories,
+  getTopics,
+  createTopic,
+  updateTopic,
+  deleteTopic,
+} from "@/lib/db";
+import type { Category, Topic } from "@/lib/types";
 import {
   Button,
   Card,
   Typography,
   Drawer,
   Input,
+  Select,
   message,
   Spin,
   Popconfirm,
   Empty,
 } from "antd";
-import { Plus, Edit2, Trash2, FolderTree } from "lucide-react";
+import { Plus, Edit2, Trash2, Layers } from "lucide-react";
 import { PageContainer } from "@/components/MainLayout";
 
 const { Title, Text } = Typography;
 
-export default function AdminCategoriesPage() {
+export default function AdminTopicsPage() {
   const router = useRouter();
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterCat, setFilterCat] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editing, setEditing] = useState<Category | null>(null);
+  const [editing, setEditing] = useState<Topic | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
-  async function loadData() {
+  async function loadTopics(catId?: string) {
     try {
-      const data = await getCategories();
-      setCategories(data);
+      const data = await getTopics(catId || undefined);
+      setTopics(data);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
       message.error("Lỗi tải dữ liệu: " + msg);
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -60,40 +68,61 @@ export default function AdminCategoriesPage() {
         router.replace("/home");
         return;
       }
-      loadData();
+      try {
+        const cats = await getCategories();
+        setCategories(cats);
+        await loadTopics();
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
+
+  const handleFilterChange = (v: string) => {
+    setFilterCat(v || "");
+    loadTopics(v || undefined);
+  };
 
   const openCreate = () => {
     setEditing(null);
     setName("");
     setDescription("");
+    setCategoryId(filterCat);
     setDrawerOpen(true);
   };
 
-  const openEdit = (cat: Category) => {
-    setEditing(cat);
-    setName(cat.name);
-    setDescription(cat.description);
+  const openEdit = (topic: Topic) => {
+    setEditing(topic);
+    setName(topic.name);
+    setDescription(topic.description);
+    setCategoryId(topic.category_id || "");
     setDrawerOpen(true);
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
-      message.error("Vui lòng nhập tên categories");
+      message.error("Vui lòng nhập tên chủ đề");
+      return;
+    }
+    if (!categoryId) {
+      message.error("Vui lòng chọn categories");
       return;
     }
     setSaving(true);
     try {
       if (editing) {
-        await updateCategory(editing.id, { name: name.trim(), description: description.trim() });
-        message.success("Đã cập nhật categories");
+        await updateTopic(editing.id, {
+          name: name.trim(),
+          description: description.trim(),
+          category_id: categoryId,
+        });
+        message.success("Đã cập nhật chủ đề");
       } else {
-        await createCategory(name.trim(), description.trim());
-        message.success("Đã tạo categories mới");
+        await createTopic(name.trim(), description.trim(), categoryId);
+        message.success("Đã tạo chủ đề mới");
       }
       setDrawerOpen(false);
-      loadData();
+      loadTopics(filterCat || undefined);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
       message.error("Lỗi: " + msg);
@@ -104,14 +133,17 @@ export default function AdminCategoriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteCategory(id);
-      message.success("Đã xóa categories");
-      loadData();
+      await deleteTopic(id);
+      message.success("Đã xóa chủ đề");
+      loadTopics(filterCat || undefined);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi không xác định";
       message.error("Lỗi: " + msg);
     }
   };
+
+  const categoryName = (id: string | null) =>
+    categories.find((c) => c.id === id)?.name || "Chưa phân loại";
 
   if (loading) {
     return (
@@ -123,10 +155,10 @@ export default function AdminCategoriesPage() {
 
   return (
     <PageContainer className="py-4">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <Title level={4} className="mb-1">Quản lý Categories</Title>
-          <Text type="secondary">Nhóm lớn chứa các chủ đề học tập</Text>
+          <Title level={4} className="mb-1">Quản lý Chủ đề</Title>
+          <Text type="secondary">Chủ đề thuộc từng categories</Text>
         </div>
         <Button
           type="primary"
@@ -138,21 +170,39 @@ export default function AdminCategoriesPage() {
         </Button>
       </div>
 
-      {categories.length === 0 ? (
-        <Empty description="Chưa có categories nào" />
+      <div className="mb-4">
+        <Select
+          value={filterCat}
+          onChange={handleFilterChange}
+          placeholder="Lọc theo categories"
+          allowClear
+          size="large"
+          className="w-full rounded-xl"
+          options={[
+            { value: "", label: "Tất cả categories" },
+            ...categories.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
+      </div>
+
+      {topics.length === 0 ? (
+        <Empty description="Chưa có chủ đề nào" />
       ) : (
         <div className="space-y-3">
-          {categories.map((cat) => (
-            <Card key={cat.id} className="rounded-2xl border-0 shadow-sm">
+          {topics.map((topic) => (
+            <Card key={topic.id} className="rounded-2xl border-0 shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                    <FolderTree size={20} className="text-amber-600" />
+                  <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                    <Layers size={20} className="text-indigo-600" />
                   </div>
                   <div>
-                    <Text strong className="text-base block">{cat.name}</Text>
-                    {cat.description && (
-                      <Text type="secondary" className="text-sm">{cat.description}</Text>
+                    <Text strong className="text-base block">{topic.name}</Text>
+                    <Text type="secondary" className="text-sm block">
+                      {categoryName(topic.category_id)}
+                    </Text>
+                    {topic.description && (
+                      <Text type="secondary" className="text-xs">{topic.description}</Text>
                     )}
                   </div>
                 </div>
@@ -160,13 +210,13 @@ export default function AdminCategoriesPage() {
                   <Button
                     type="text"
                     icon={<Edit2 size={16} />}
-                    onClick={() => openEdit(cat)}
+                    onClick={() => openEdit(topic)}
                     className="min-w-[44px] min-h-[44px]"
                   />
                   <Popconfirm
-                    title="Xóa categories này?"
-                    description="Các chủ đề bên trong sẽ không còn thuộc categories nào"
-                    onConfirm={() => handleDelete(cat.id)}
+                    title="Xóa chủ đề này?"
+                    description="Các thẻ từ vựng trong chủ đề cũng sẽ bị xóa"
+                    onConfirm={() => handleDelete(topic.id)}
                     okText="Xóa"
                     cancelText="Hủy"
                   >
@@ -180,7 +230,7 @@ export default function AdminCategoriesPage() {
       )}
 
       <Drawer
-        title={editing ? "Sửa categories" : "Thêm categories mới"}
+        title={editing ? "Sửa chủ đề" : "Thêm chủ đề mới"}
         placement="bottom"
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
@@ -200,11 +250,22 @@ export default function AdminCategoriesPage() {
         <div className="drawer-handle" />
         <div className="max-w-lg mx-auto space-y-4">
           <div>
-            <Text className="block mb-1 font-medium">Tên categories</Text>
+            <Text className="block mb-1 font-medium">Categories</Text>
+            <Select
+              value={categoryId || undefined}
+              onChange={(v) => setCategoryId(v)}
+              placeholder="Chọn categories"
+              size="large"
+              className="w-full rounded-xl"
+              options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            />
+          </div>
+          <div>
+            <Text className="block mb-1 font-medium">Tên chủ đề</Text>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="VD: Tiếng anh tiểu học, Tiếng anh giao tiếp..."
+              placeholder="VD: 40 câu thông dụng lớp 1..."
               size="large"
               className="rounded-xl"
             />
@@ -214,7 +275,7 @@ export default function AdminCategoriesPage() {
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Mô tả ngắn"
+              placeholder="Mô tả ngắn về chủ đề"
               size="large"
               className="rounded-xl"
             />
