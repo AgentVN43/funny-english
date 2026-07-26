@@ -1,30 +1,30 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getCards } from "@/lib/db";
-import { upsertProgress, getUserSettings } from "@/lib/db";
+import {
+  getCards,
+  getExtraDistractorCards,
+  getTopicProgress,
+  getUserSettings,
+  upsertProgress,
+} from "@/lib/db";
 import type { Card } from "@/lib/types";
+import type { CardProgress, ProgressMap } from "@/lib/session";
+import { buildOptions, selectSessionCards } from "@/lib/session";
+import { PendingSaveQueue } from "@/lib/pendingSaves";
+import { DEFAULT_CARDS_PER_SESSION, OPTION_COUNT } from "@/lib/constants";
+import { Alert, Button, Progress, Spin, Typography } from "antd";
 import {
-  Button,
-  Typography,
-  Spin,
-  Progress,
-} from "antd";
-import {
-  CheckCircle2,
-  XCircle,
-  Volume2,
   ArrowLeft,
+  CheckCircle2,
   RotateCcw,
+  SkipForward,
+  Volume2,
+  XCircle,
 } from "lucide-react";
-import {
-  shuffleArray,
-  speakText,
-  speakFeedback,
-  cancelSpeech,
-} from "@/lib/utils";
+import { cancelSpeech, speakFeedback, speakText } from "@/lib/utils";
 import { PageContainer } from "@/components/MainLayout";
 
 const { Title, Text } = Typography;
@@ -32,9 +32,17 @@ const { Title, Text } = Typography;
 export default function LearnPage() {
   const { topicId } = useParams<{ topicId: string }>();
   const router = useRouter();
+
+  // Toàn bộ thẻ của chủ đề — nguồn dựng đáp án nhiễu (KHÔNG phải thẻ của phiên)
+  const [allCards, setAllCards] = useState<Card[]>([]);
+  // Thẻ mượn từ chủ đề cùng nhóm, chỉ dùng khi chủ đề này quá ít thẻ
+  const [extraPool, setExtraPool] = useState<Card[]>([]);
+  // Thẻ được chọn cho phiên học này
   const [cards, setCards] = useState<Card[]>([]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -42,8 +50,13 @@ export default function LearnPage() {
   const [sessionDone, setSessionDone] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
-  // Đang đọc phản hồi — chặn sang thẻ tiếp theo cho tới khi đọc xong
+  // Đang đọc phản hồi — chặn sang thẻ tiếp theo cho tới khi đọc xong hoặc bấm bỏ qua
   const [speaking, setSpeaking] = useState(false);
+
+  // Câu trả lời chưa lưu được — giữ trong ref để retry không bị stale closure
+  const pendingRef = useRef(new PendingSaveQueue());
+  const [pendingCount, setPendingCount] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -63,56 +76,120 @@ export default function LearnPage() {
 
   useEffect(() => {
     if (!userId || !topicId) return;
+    let cancelled = false;
+
     (async () => {
-      const settings = await getUserSettings(userId!);
-      let allCards = await getCards(topicId);
-      allCards = shuffleArray(allCards);
-      const limited = allCards.slice(0, settings.cards_per_session);
-      setCards(limited);
-      setLoading(false);
+      setLoading(true);
+      setLoadError(null);
+      try {
+        // Thiếu cài đặt hoặc thiếu tiến độ không được làm hỏng cả phiên học
+        const [settings, topicCards, progressRows] = await Promise.all([
+          getUserSettings(userId).catch(() => ({
+            cards_per_session: DEFAULT_CARDS_PER_SESSION,
+          })),
+          getCards(topicId),
+          getTopicProgress(userId, topicId).catch(
+            () => [] as CardProgress[]
+          ),
+        ]);
+        if (cancelled) return;
+
+        const progress: ProgressMap = {};
+        for (const row of progressRows) progress[row.card_id] = row;
+
+        // Chủ đề ít thẻ thì mượn thêm thẻ cùng nhóm để đủ 4 lựa chọn.
+        // Lấy ngay tại đây để đáp án không bị trộn lại giữa chừng.
+        const extra =
+          topicCards.length < OPTION_COUNT
+            ? await getExtraDistractorCards(topicId).catch(() => [] as Card[])
+            : [];
+        if (cancelled) return;
+
+        setAllCards(topicCards);
+        setExtraPool(extra);
+        setCards(
+          selectSessionCards(topicCards, progress, settings.cards_per_session)
+        );
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setLoadError(
+          err instanceof Error ? err.message : "Không tải được dữ liệu"
+        );
+      } finally {
+        // Luôn tắt loading — trước đây lỗi ở đây làm màn hình quay mãi
+        if (!cancelled) setLoading(false);
+      }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [userId, topicId, sessionKey]);
 
-  const options = useMemo(() => {
-    if (cards.length === 0 || currentIndex >= cards.length) return [];
-    const correct = cards[currentIndex];
-    const wrongPool = cards.filter((c) => c.id !== correct.id);
-    const shuffled = shuffleArray(wrongPool).slice(0, 3);
-    return shuffleArray([
-      { id: correct.id, text: correct.word },
-      ...shuffled.map((c) => ({ id: c.id, text: c.word })),
-    ]);
-  }, [currentIndex, cards]);
+  /** Nguồn đáp án nhiễu: cả chủ đề, mượn thêm chủ đề cùng nhóm khi cần */
+  const distractorPool = useMemo(
+    () => [...allCards, ...extraPool],
+    [allCards, extraPool]
+  );
 
-  const handleAnswer = async (answerId: string) => {
-    if (showResult) return;
+  const currentCard: Card | undefined = cards[currentIndex];
+
+  const options = useMemo(() => {
+    if (!currentCard) return [];
+    return buildOptions(currentCard, distractorPool);
+  }, [currentCard, distractorPool]);
+
+  /** Ghi kết quả lên server; thất bại thì xếp hàng chờ thử lại */
+  const saveAnswer = useCallback(
+    async (uid: string, cardId: string, correct: boolean) => {
+      try {
+        await upsertProgress(uid, cardId, correct);
+      } catch {
+        pendingRef.current.add({ cardId, correct });
+        setPendingCount(pendingRef.current.size);
+      }
+    },
+    []
+  );
+
+  const retryPending = useCallback(async () => {
+    if (!userId || pendingRef.current.size === 0) return;
+    setRetrying(true);
+    const remaining = await pendingRef.current.flush((item) =>
+      upsertProgress(userId, item.cardId, item.correct).then(() => undefined)
+    );
+    setPendingCount(remaining);
+    setRetrying(false);
+  }, [userId]);
+
+  const handleAnswer = (answerId: string) => {
+    if (showResult || !currentCard) return;
     setSelectedAnswer(answerId);
 
-    const currentCard = cards[currentIndex];
     const correct = answerId === currentCard.id;
     setIsCorrect(correct);
     setShowResult(true);
 
     setScore((s) =>
-      correct
-        ? { ...s, correct: s.correct + 1 }
-        : { ...s, wrong: s.wrong + 1 }
+      correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 }
     );
+
     // Khen/nhắc bằng tiếng Việt rồi đọc to từ vựng 3 lần cho cả đúng và sai.
-    // Nút "Tiếp theo" chỉ mở sau khi đọc xong.
     setSpeaking(true);
     speakFeedback(correct, currentCard.word, {
       onDone: () => setSpeaking(false),
     });
 
-    if (userId) {
-      try {
-        await upsertProgress(userId, currentCard.id, correct);
-      } catch {}
-    }
+    if (userId) void saveAnswer(userId, currentCard.id, correct);
   };
 
-  const handleNext = () => {
+  /** Bỏ qua phần đọc để sang câu tiếp ngay */
+  const skipSpeech = useCallback(() => {
+    cancelSpeech();
+    setSpeaking(false);
+  }, []);
+
+  const handleNext = useCallback(() => {
     if (speaking) return;
     if (currentIndex < cards.length - 1) {
       setCurrentIndex((i) => i + 1);
@@ -121,14 +198,59 @@ export default function LearnPage() {
       setShowResult(false);
     } else {
       setSessionDone(true);
+      void retryPending();
     }
-  };
+  }, [speaking, currentIndex, cards.length, retryPending]);
 
-  const speakWord = (word: string) => {
-    speakText(word);
-  };
+  // Phím tắt: 1-4 chọn đáp án, Enter sang câu tiếp, Space bỏ qua phần đọc
+  useEffect(() => {
+    if (loading || sessionDone || !currentCard) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Enter/Space trên phần tử đang focus đã được trình duyệt xử lý sẵn —
+      // xử lý thêm ở đây sẽ nhảy 2 thẻ một lúc
+      const el = e.target as HTMLElement | null;
+      const typing =
+        el instanceof HTMLElement &&
+        (el.tagName === "BUTTON" ||
+          el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable);
+      if (typing && (e.key === "Enter" || e.key === " ")) return;
+
+      if (e.key >= "1" && e.key <= String(options.length)) {
+        const opt = options[Number(e.key) - 1];
+        if (opt) {
+          e.preventDefault();
+          handleAnswer(opt.id);
+        }
+        return;
+      }
+      if (e.key === "Enter" && showResult && !speaking) {
+        e.preventDefault();
+        handleNext();
+        return;
+      }
+      if (e.key === " " && speaking) {
+        e.preventDefault();
+        skipSpeech();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    loading,
+    sessionDone,
+    currentCard,
+    options,
+    showResult,
+    speaking,
+    handleNext,
+    skipSpeech,
+  ]);
 
   const restart = () => {
+    cancelSpeech();
     setSpeaking(false);
     setCurrentIndex(0);
     setScore({ correct: 0, wrong: 0 });
@@ -148,6 +270,27 @@ export default function LearnPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <PageContainer className="py-10">
+        <Alert
+          type="error"
+          showIcon
+          message="Không tải được bài học"
+          description={loadError}
+        />
+        <div className="flex gap-3 mt-4">
+          <Button type="primary" onClick={restart} className="rounded-xl">
+            Thử lại
+          </Button>
+          <Button onClick={() => router.push("/home")} className="rounded-xl">
+            Quay lại
+          </Button>
+        </div>
+      </PageContainer>
+    );
+  }
+
   if (cards.length === 0) {
     return (
       <PageContainer className="py-20 text-center">
@@ -160,9 +303,8 @@ export default function LearnPage() {
   }
 
   if (sessionDone) {
-    const pct = Math.round(
-      (score.correct / (score.correct + score.wrong)) * 100
-    );
+    const answered = score.correct + score.wrong;
+    const pct = answered === 0 ? 0 : Math.round((score.correct / answered) * 100);
     return (
       <PageContainer className="py-10 text-center">
         <div className="bg-white rounded-2xl shadow-sm p-8">
@@ -171,7 +313,9 @@ export default function LearnPage() {
             <Progress
               type="circle"
               percent={pct}
-              strokeColor={pct >= 80 ? "#22c55e" : pct >= 50 ? "#eab308" : "#ef4444"}
+              strokeColor={
+                pct >= 80 ? "#22c55e" : pct >= 50 ? "#eab308" : "#ef4444"
+              }
               size={120}
             />
           </div>
@@ -189,6 +333,22 @@ export default function LearnPage() {
               <Text type="secondary">Sai</Text>
             </div>
           </div>
+
+          {pendingCount > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              className="text-left mb-4"
+              message={`Chưa lưu được ${pendingCount} câu trả lời`}
+              description="Kết quả này chưa vào phần Tiến độ. Kiểm tra kết nối mạng rồi thử lại."
+              action={
+                <Button size="small" loading={retrying} onClick={retryPending}>
+                  Lưu lại
+                </Button>
+              }
+            />
+          )}
+
           <div className="space-y-3 mt-6">
             <Button
               type="primary"
@@ -214,7 +374,8 @@ export default function LearnPage() {
     );
   }
 
-  const currentCard = cards[currentIndex];
+  if (!currentCard) return null;
+
   const progressPct = ((currentIndex + 1) / cards.length) * 100;
 
   return (
@@ -224,6 +385,7 @@ export default function LearnPage() {
         <div className="flex items-center justify-between mb-1">
           <Button
             type="text"
+            aria-label="Quay lại trang chủ"
             icon={<ArrowLeft size={20} />}
             onClick={() => router.push("/home")}
             className="min-w-[44px] min-h-[44px]"
@@ -231,11 +393,15 @@ export default function LearnPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <CheckCircle2 size={14} className="text-green-500" />
-              <Text className="text-green-600 font-semibold text-sm">{score.correct}</Text>
+              <Text className="text-green-600 font-semibold text-sm">
+                {score.correct}
+              </Text>
             </div>
             <div className="flex items-center gap-1.5">
               <XCircle size={14} className="text-red-500" />
-              <Text className="text-red-600 font-semibold text-sm">{score.wrong}</Text>
+              <Text className="text-red-600 font-semibold text-sm">
+                {score.wrong}
+              </Text>
             </div>
             <Text type="secondary" className="text-sm font-medium">
               {currentIndex + 1}/{cards.length}
@@ -251,12 +417,27 @@ export default function LearnPage() {
         />
       </div>
 
+      {pendingCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          className="mb-4"
+          message={`Chưa lưu được ${pendingCount} câu trả lời`}
+          action={
+            <Button size="small" loading={retrying} onClick={retryPending}>
+              Thử lại
+            </Button>
+          }
+        />
+      )}
+
       {/* Main content: left + right */}
       <div className="flashcard-enter flex flex-col sm:flex-row gap-4">
         {/* Left: image + word + meaning */}
         <div className="sm:w-1/2">
           <div className="bg-white rounded-2xl shadow-sm p-6 text-center h-full flex flex-col justify-center">
             {currentCard.image && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={currentCard.image}
                 alt={currentCard.meaning_vi}
@@ -270,7 +451,8 @@ export default function LearnPage() {
                     {currentCard.word}
                   </Title>
                   <button
-                    onClick={() => speakWord(currentCard.word)}
+                    onClick={() => speakText(currentCard.word)}
+                    aria-label={`Nghe lại từ ${currentCard.word}`}
                     className="p-2 rounded-full bg-indigo-100 hover:bg-indigo-200 transition-colors"
                   >
                     <Volume2 size={20} className="text-indigo-600" />
@@ -279,18 +461,22 @@ export default function LearnPage() {
                 <Text type="secondary" className="text-base">
                   {currentCard.meaning_vi}
                 </Text>
-                <div className={`mt-3 py-2 px-3 rounded-lg text-sm font-medium ${
-                  isCorrect ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                }`}>
-                  {isCorrect ? "Chính xác!" : `Sai rồi! Đáp án: ${currentCard.word}`}
+                <div
+                  className={`mt-3 py-2 px-3 rounded-lg text-sm font-medium ${
+                    isCorrect
+                      ? "bg-green-50 text-green-700"
+                      : "bg-red-50 text-red-700"
+                  }`}
+                >
+                  {isCorrect
+                    ? "Chính xác!"
+                    : `Sai rồi! Đáp án: ${currentCard.word}`}
                 </div>
               </>
-            ) : currentCard.image ? (
-              <Text type="secondary" className="text-base">
-                Chọn từ tiếng Anh đúng
-              </Text>
             ) : (
               <>
+                {/* Luôn hiện nghĩa tiếng Việt — ảnh chỉ là gợi ý thêm, vì nhiều
+                    từ (happy, remember...) không thể đoán được qua ảnh */}
                 <Title level={3} className="mb-2">
                   {currentCard.meaning_vi}
                 </Title>
@@ -305,10 +491,11 @@ export default function LearnPage() {
         {/* Right: answer options */}
         <div className="sm:w-1/2">
           <div className="grid grid-cols-2 sm:grid-cols-1 gap-3 content-start">
-            {options.map((opt) => {
+            {options.map((opt, i) => {
               const isSelectedAnswer = selectedAnswer === opt.id;
               const isCorrectAnswer = opt.id === currentCard.id;
-              let btnClass = "w-full min-h-[52px] py-3 px-4 rounded-xl text-base font-medium border-2 text-left";
+              let btnClass =
+                "w-full min-h-[52px] py-3 px-4 rounded-xl text-base font-medium border-2 text-left";
 
               if (showResult) {
                 if (isCorrectAnswer) {
@@ -319,7 +506,8 @@ export default function LearnPage() {
                   btnClass += " border-gray-200 opacity-50";
                 }
               } else {
-                btnClass += " border-gray-200 hover:border-indigo-300 active:bg-indigo-50";
+                btnClass +=
+                  " border-gray-200 hover:border-indigo-300 active:bg-indigo-50";
               }
 
               return (
@@ -330,35 +518,55 @@ export default function LearnPage() {
                   disabled={showResult}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span>{opt.text}</span>
-                    {showResult && isCorrectAnswer && (
-                      <CheckCircle2 size={18} className="text-green-500 shrink-0" />
-                    )}
-                    {showResult && isSelectedAnswer && !isCorrectAnswer && (
-                      <XCircle size={18} className="text-red-500 shrink-0" />
-                    )}
+                    <span className="break-words">{opt.text}</span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {showResult && isCorrectAnswer && (
+                        <CheckCircle2 size={18} className="text-green-500" />
+                      )}
+                      {showResult && isSelectedAnswer && !isCorrectAnswer && (
+                        <XCircle size={18} className="text-red-500" />
+                      )}
+                      {!showResult && (
+                        <kbd className="hidden sm:inline-block text-xs text-gray-400 border border-gray-200 rounded px-1.5">
+                          {i + 1}
+                        </kbd>
+                      )}
+                    </span>
                   </div>
                 </button>
               );
             })}
 
-            {/* Next button — chỉ bật sau khi đọc xong từ vựng */}
+            {/* Next button — mở sau khi đọc xong, hoặc bấm "Bỏ qua" để đi ngay */}
             {showResult && (
-              <Button
-                type="primary"
-                size="large"
-                block
-                loading={speaking}
-                disabled={speaking}
-                onClick={handleNext}
-                className="h-12 rounded-xl text-base font-semibold mt-2 pop-in"
-              >
-                {speaking
-                  ? "Đang đọc từ..."
-                  : currentIndex < cards.length - 1
-                    ? "Tiếp theo"
-                    : "Xem kết quả"}
-              </Button>
+              <div className="mt-2 space-y-2 pop-in">
+                <Button
+                  type="primary"
+                  size="large"
+                  block
+                  loading={speaking}
+                  disabled={speaking}
+                  onClick={handleNext}
+                  className="h-12 rounded-xl text-base font-semibold"
+                >
+                  {speaking
+                    ? "Đang đọc từ..."
+                    : currentIndex < cards.length - 1
+                      ? "Tiếp theo"
+                      : "Xem kết quả"}
+                </Button>
+                {speaking && (
+                  <Button
+                    type="text"
+                    block
+                    icon={<SkipForward size={16} />}
+                    onClick={skipSpeech}
+                    className="rounded-xl"
+                  >
+                    Bỏ qua
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>
