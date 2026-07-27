@@ -8,11 +8,12 @@ import {
   isValidPhone,
   DEFAULT_PASSWORD,
 } from "@/lib/auth";
-import { Button, Card, Input, Typography, message, Divider, Spin } from "antd";
-import { BookOpen, Phone, Lock, ArrowLeft } from "lucide-react";
+import { message } from "antd";
+import { ArrowLeft, Lock, LogIn, Phone, UserPlus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-
-const { Title, Text } = Typography;
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import { Loader } from "@/components/ui/Layout";
 
 /** Chỉ cho phép đường dẫn nội bộ để tránh open redirect */
 function safeRedirect(value: string | null): string | null {
@@ -56,30 +57,21 @@ function LoginContent() {
     }
     let role = "user";
     try {
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
         .maybeSingle();
-      if (profileError) {
-        console.error("Lỗi truy cập profiles: ", profileError);
-      }
-      if (profile && profile.role) {
-        role = profile.role;
-      }
-    } catch (e) {
-      console.error("Lỗi khi lấy thông tin profile: ", e);
+      if (profile?.role) role = profile.role;
+    } catch {
+      // giữ mặc định là user
     }
 
     message.success("Đăng nhập thành công!");
     // Ưu tiên quay lại nơi user đang muốn vào (VD: chủ đề vừa bấm)
-    if (redirectTo) {
-      router.replace(redirectTo);
-    } else if (role === "admin") {
-      router.replace("/admin/categories");
-    } else {
-      router.replace("/home");
-    }
+    if (redirectTo) router.replace(redirectTo);
+    else if (role === "admin") router.replace("/admin/categories");
+    else router.replace("/home");
   };
 
   const handleRegister = async () => {
@@ -114,92 +106,98 @@ function LoginContent() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-dvh bg-gradient-to-br from-indigo-500 to-purple-600 p-4">
-      <Card className="w-full max-w-sm shadow-2xl rounded-2xl mx-auto">
-        <div className="py-6">
-          <Button
-            type="text"
-            icon={<ArrowLeft size={18} />}
-            onClick={() => router.push("/home")}
-            className="mb-2"
-          />
-          <div className="flex justify-center mb-2">
-            <BookOpen size={40} className="text-indigo-500" />
+    <div className="dotted-bg flex min-h-dvh flex-col items-center justify-center bg-cloud px-4 py-8">
+      <div className="w-full max-w-sm">
+        <button
+          onClick={() => router.push("/home")}
+          className="mb-4 inline-flex items-center gap-1.5 font-display font-extrabold text-ink-soft transition-colors hover:text-ink"
+        >
+          <ArrowLeft size={18} strokeWidth={2.5} />
+          Quay lại
+        </button>
+
+        <Card className="p-6">
+          <div className="text-center">
+            <span className="anim-float block text-6xl" aria-hidden>
+              🦉
+            </span>
+            <h1 className="mt-2 text-3xl text-ink">Chào bạn nhỏ!</h1>
+            <p className="mt-1 font-bold text-ink-soft">
+              Nhập số điện thoại để vào học
+            </p>
           </div>
-          <Title level={3} className="text-center mb-1">
-            Đăng nhập
-          </Title>
-          <Text type="secondary" className="block text-center mb-6">
-            Dùng số điện thoại để đăng nhập
-          </Text>
-          <div className="space-y-4">
-            <Input
-              size="large"
-              type="tel"
-              inputMode="numeric"
-              prefix={<Phone size={18} className="text-gray-400" />}
-              placeholder="Số điện thoại"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="rounded-xl"
-            />
-            <Input.Password
-              size="large"
-              prefix={<Lock size={18} className="text-gray-400" />}
-              placeholder="Mật khẩu"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onPressEnter={handleLogin}
-              className="rounded-xl"
-            />
+
+          <div className="mt-6 space-y-3">
+            <label className="block">
+              <span className="sr-only">Số điện thoại</span>
+              <div className="flex items-center gap-3 rounded-pill border-2 border-cloud-deep bg-cloud px-4 focus-within:border-grape">
+                <Phone size={20} className="shrink-0 text-ink-faint" />
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="Số điện thoại"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-transparent py-3.5 font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+                />
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="sr-only">Mật khẩu</span>
+              <div className="flex items-center gap-3 rounded-pill border-2 border-cloud-deep bg-cloud px-4 focus-within:border-grape">
+                <Lock size={20} className="shrink-0 text-ink-faint" />
+                <input
+                  type="password"
+                  placeholder="Mật khẩu"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  className="w-full bg-transparent py-3.5 font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+                />
+              </div>
+            </label>
+
             <Button
-              type="primary"
-              size="large"
               block
               loading={loading}
+              icon={<LogIn size={20} strokeWidth={2.5} />}
               onClick={handleLogin}
-              className="h-12 rounded-xl text-base font-semibold"
             >
-              Đăng nhập
+              Vào học
             </Button>
-            <Divider>
-              <Text type="secondary" className="text-xs">
-                hoặc
-              </Text>
-            </Divider>
+
+            <div className="flex items-center gap-3 py-1">
+              <span className="h-0.5 flex-1 rounded-full bg-cloud-deep" />
+              <span className="text-sm font-bold text-ink-faint">hoặc</span>
+              <span className="h-0.5 flex-1 rounded-full bg-cloud-deep" />
+            </div>
+
             <Button
-              size="large"
               block
+              tone="plain"
               loading={loading}
+              icon={<UserPlus size={20} strokeWidth={2.5} />}
               onClick={handleRegister}
-              className="h-12 rounded-xl"
             >
-              Đăng ký tài khoản mới
+              Tạo tài khoản mới
             </Button>
-            <Text
-              type="secondary"
-              className="block text-center text-xs"
-            >
-              Tài khoản mới có mật khẩu mặc định là {DEFAULT_PASSWORD}.
-              <br />
-              Bạn có thể đổi mật khẩu trong phần Cài đặt.
-            </Text>
+
+            <p className="pt-1 text-center text-sm text-ink-soft">
+              Tài khoản mới có mật khẩu mặc định là{" "}
+              <strong className="text-ink">{DEFAULT_PASSWORD}</strong>. Bạn đổi
+              được trong phần Cài đặt.
+            </p>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-dvh bg-gradient-to-br from-indigo-500 to-purple-600">
-          <Spin size="large" />
-        </div>
-      }
-    >
+    <Suspense fallback={<Loader />}>
       <LoginContent />
     </Suspense>
   );

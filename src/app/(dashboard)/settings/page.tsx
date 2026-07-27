@@ -5,45 +5,50 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getUserSettings, updateUserSettings } from "@/lib/db";
 import { changePassword } from "@/lib/auth";
-import { Button, Card, Input, InputNumber, Typography, message, Spin } from "antd";
-import { Settings, Save, Lock, KeyRound } from "lucide-react";
-import { PageContainer } from "@/components/MainLayout";
+import { message } from "antd";
+import { KeyRound, Lock, Minus, Plus, Save } from "lucide-react";
+import { Screen, Loader } from "@/components/ui/Layout";
+import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import { DEFAULT_CARDS_PER_SESSION } from "@/lib/constants";
 
-const { Title, Text } = Typography;
+const MIN_CARDS = 5;
+const MAX_CARDS = 50;
+/** Các mức hay dùng — bấm một lần thay vì bấm cộng trừ chục lần */
+const PRESETS = [5, 10, 20, 40];
 
 export default function SettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [cardsPerSession, setCardsPerSession] = useState(10);
+  const [cardsPerSession, setCardsPerSession] = useState(
+    DEFAULT_CARDS_PER_SESSION
+  );
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Đổi mật khẩu
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
 
-  async function loadSettings(uid: string) {
-    try {
-      const settings = await getUserSettings(uid);
-      setCardsPerSession(settings.cards_per_session);
-    } catch {
-      setCardsPerSession(10);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         router.replace("/login?redirect=%2Fsettings");
         return;
       }
       setUserId(session.user.id);
-      loadSettings(session.user.id);
+      try {
+        const settings = await getUserSettings(session.user.id);
+        setCardsPerSession(settings.cards_per_session);
+      } catch {
+        setCardsPerSession(DEFAULT_CARDS_PER_SESSION);
+      } finally {
+        setLoading(false);
+      }
     });
   }, [router]);
+
+  const clamp = (v: number) => Math.max(MIN_CARDS, Math.min(MAX_CARDS, v));
 
   const handleSave = async () => {
     if (!userId) return;
@@ -88,99 +93,149 @@ export default function SettingsPage() {
     setChangingPassword(false);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Spin size="large" />
-      </div>
-    );
-  }
+  if (loading) return <Loader />;
 
   return (
-    <PageContainer className="py-4">
-      <div className="mb-6">
-        <Title level={4}>Cài đặt</Title>
-        <Text type="secondary">Tùy chỉnh trải nghiệm học tập</Text>
-      </div>
+    <Screen className="py-4">
+      <h1 className="text-2xl text-ink">Cài đặt</h1>
+      <p className="mt-1 font-bold text-ink-soft">
+        Tùy chỉnh cho vừa sức bạn nhỏ
+      </p>
 
-      <div className="space-y-4">
-        <Card className="rounded-2xl border-0 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <Settings size={24} className="text-indigo-600" />
+      <div className="mt-5 space-y-4">
+        {/* Số thẻ mỗi phiên */}
+        <Card className="p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid size-12 shrink-0 place-items-center rounded-blob bg-sky-soft text-2xl">
+              🎯
+            </span>
             <div>
-              <Text strong className="text-base">
-                Số lượng thẻ mỗi phiên
-              </Text>
-              <Text type="secondary" className="block text-sm">
-                Chọn số từ vựng bạn muốn học trong mỗi phiên
-              </Text>
+              <h2 className="text-lg text-ink">Số từ mỗi buổi học</h2>
+              <p className="text-sm font-bold text-ink-soft">
+                Học bao nhiêu từ trong một lần?
+              </p>
             </div>
           </div>
-          <InputNumber
-            min={5}
-            max={50}
-            value={cardsPerSession}
-            onChange={(v) => setCardsPerSession(v || 10)}
-            size="large"
-            className="w-full rounded-xl"
-          />
+
+          <div className="mt-5 flex items-center justify-center gap-5">
+            <button
+              onClick={() => setCardsPerSession((v) => clamp(v - 5))}
+              disabled={cardsPerSession <= MIN_CARDS}
+              aria-label="Giảm số từ"
+              className="btn-push grid size-12 place-items-center rounded-full bg-white text-ink [--push-shade:var(--color-cloud-deep)] disabled:opacity-40"
+            >
+              <Minus size={22} strokeWidth={3} />
+            </button>
+
+            <div className="text-center">
+              <div className="font-display text-5xl font-extrabold text-grape tabular-nums">
+                {cardsPerSession}
+              </div>
+              <div className="text-sm font-bold text-ink-soft">từ</div>
+            </div>
+
+            <button
+              onClick={() => setCardsPerSession((v) => clamp(v + 5))}
+              disabled={cardsPerSession >= MAX_CARDS}
+              aria-label="Tăng số từ"
+              className="btn-push grid size-12 place-items-center rounded-full bg-white text-ink [--push-shade:var(--color-cloud-deep)] disabled:opacity-40"
+            >
+              <Plus size={22} strokeWidth={3} />
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setCardsPerSession(p)}
+                className={`rounded-full px-4 py-2 font-display text-sm font-extrabold transition-colors ${
+                  cardsPerSession === p
+                    ? "bg-grape text-white"
+                    : "bg-cloud text-ink-soft hover:bg-cloud-deep"
+                }`}
+              >
+                {p} từ
+              </button>
+            ))}
+          </div>
+
           <Button
-            type="primary"
-            size="large"
             block
-            icon={<Save size={18} />}
+            className="mt-5"
             loading={saving}
+            icon={<Save size={20} strokeWidth={2.5} />}
             onClick={handleSave}
-            className="mt-4 h-12 rounded-xl font-semibold"
           >
             Lưu cài đặt
           </Button>
         </Card>
 
-        <Card className="rounded-2xl border-0 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <KeyRound size={24} className="text-indigo-600" />
+        {/* Đổi mật khẩu */}
+        <Card className="p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid size-12 shrink-0 place-items-center rounded-blob bg-sun-soft text-2xl">
+              🔐
+            </span>
             <div>
-              <Text strong className="text-base">
-                Đổi mật khẩu
-              </Text>
-              <Text type="secondary" className="block text-sm">
-                Mật khẩu mới phải có ít nhất 8 ký tự
-              </Text>
+              <h2 className="text-lg text-ink">Đổi mật khẩu</h2>
+              <p className="text-sm font-bold text-ink-soft">Ít nhất 8 ký tự</p>
             </div>
           </div>
-          <div className="space-y-3">
-            <Input.Password
-              size="large"
-              prefix={<Lock size={18} className="text-gray-400" />}
+
+          <div className="mt-4 space-y-3">
+            <PasswordField
               placeholder="Mật khẩu mới"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="rounded-xl"
+              onChange={setNewPassword}
             />
-            <Input.Password
-              size="large"
-              prefix={<Lock size={18} className="text-gray-400" />}
-              placeholder="Xác nhận mật khẩu mới"
+            <PasswordField
+              placeholder="Nhập lại mật khẩu mới"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onPressEnter={handleChangePassword}
-              className="rounded-xl"
+              onChange={setConfirmPassword}
+              onEnter={handleChangePassword}
             />
             <Button
-              type="primary"
-              size="large"
               block
-              icon={<KeyRound size={18} />}
+              tone="sky"
               loading={changingPassword}
+              icon={<KeyRound size={20} strokeWidth={2.5} />}
               onClick={handleChangePassword}
-              className="h-12 rounded-xl font-semibold"
             >
               Đổi mật khẩu
             </Button>
           </div>
         </Card>
       </div>
-    </PageContainer>
+    </Screen>
+  );
+}
+
+function PasswordField({
+  placeholder,
+  value,
+  onChange,
+  onEnter,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  onEnter?: () => void;
+}) {
+  return (
+    <label className="block">
+      <span className="sr-only">{placeholder}</span>
+      <div className="flex items-center gap-3 rounded-pill border-2 border-cloud-deep bg-cloud px-4 focus-within:border-grape">
+        <Lock size={20} className="shrink-0 text-ink-faint" />
+        <input
+          type="password"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onEnter?.()}
+          className="w-full bg-transparent py-3.5 font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+        />
+      </div>
+    </label>
   );
 }

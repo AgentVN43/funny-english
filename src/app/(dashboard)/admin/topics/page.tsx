@@ -24,7 +24,7 @@ import {
   Empty,
 } from "antd";
 import { Plus, Edit2, Trash2, Layers } from "lucide-react";
-import { PageContainer } from "@/components/MainLayout";
+import { Screen } from "@/components/ui/Layout";
 
 const { Title, Text } = Typography;
 
@@ -154,7 +154,7 @@ export default function AdminTopicsPage() {
   }
 
   return (
-    <PageContainer className="py-4">
+    <Screen className="py-4">
       <div className="flex items-center justify-between mb-4">
         <div>
           <Title level={4} className="mb-1">Quản lý Chủ đề</Title>
@@ -282,6 +282,6 @@ export default function AdminTopicsPage() {
           </div>
         </div>
       </Drawer>
-    </PageContainer>
+    </Screen>
   );
 }

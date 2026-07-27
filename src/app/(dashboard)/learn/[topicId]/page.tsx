@@ -6,40 +6,41 @@ import { supabase } from "@/lib/supabase";
 import {
   getCards,
   getExtraDistractorCards,
+  getTopicById,
   getTopicProgress,
   getUserSettings,
+  startStudySession,
+  updateStudySession,
   upsertProgress,
 } from "@/lib/db";
-import type { Card } from "@/lib/types";
+import type { Card as CardType } from "@/lib/types";
 import type { CardProgress, ProgressMap } from "@/lib/session";
 import { buildOptions, selectSessionCards } from "@/lib/session";
 import { PendingSaveQueue } from "@/lib/pendingSaves";
 import { DEFAULT_CARDS_PER_SESSION, OPTION_COUNT } from "@/lib/constants";
-import { Alert, Button, Progress, Spin, Typography } from "antd";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  RotateCcw,
-  SkipForward,
-  Volume2,
-  XCircle,
-} from "lucide-react";
-import { cancelSpeech, speakFeedback, speakText } from "@/lib/utils";
-import { PageContainer } from "@/components/MainLayout";
-
-const { Title, Text } = Typography;
+import { ArrowLeft, CloudOff, RotateCcw, Volume2 } from "lucide-react";
+import { cancelSpeech, speakText } from "@/lib/utils";
+import { Screen, Loader, EmptyState } from "@/components/ui/Layout";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import ProgressBar from "@/components/ui/ProgressBar";
+import OptionButton, {
+  OPTION_LETTERS,
+  type OptionState,
+} from "@/components/ui/OptionButton";
 
 export default function LearnPage() {
   const { topicId } = useParams<{ topicId: string }>();
   const router = useRouter();
 
   // Toàn bộ thẻ của chủ đề — nguồn dựng đáp án nhiễu (KHÔNG phải thẻ của phiên)
-  const [allCards, setAllCards] = useState<Card[]>([]);
-  // Thẻ mượn từ chủ đề cùng nhóm, chỉ dùng khi chủ đề này quá ít thẻ
-  const [extraPool, setExtraPool] = useState<Card[]>([]);
+  const [allCards, setAllCards] = useState<CardType[]>([]);
+  // Thẻ mượn từ chủ đề khác, chỉ dùng khi chủ đề này quá ít thẻ
+  const [extraPool, setExtraPool] = useState<CardType[]>([]);
   // Thẻ được chọn cho phiên học này
-  const [cards, setCards] = useState<Card[]>([]);
+  const [cards, setCards] = useState<CardType[]>([]);
 
+  const [topicName, setTopicName] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -50,13 +51,23 @@ export default function LearnPage() {
   const [sessionDone, setSessionDone] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
-  // Đang đọc phản hồi — chặn sang thẻ tiếp theo cho tới khi đọc xong hoặc bấm bỏ qua
-  const [speaking, setSpeaking] = useState(false);
 
   // Câu trả lời chưa lưu được — giữ trong ref để retry không bị stale closure
   const pendingRef = useRef(new PendingSaveQueue());
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
+
+  // Buổi học đang ghi: id dòng study_sessions và số liệu cộng dồn.
+  // Dùng ref vì cần giá trị mới nhất ngay trong handler, không đợi re-render.
+  const studySessionRef = useRef<{
+    id: string | null;
+    total: number;
+    correct: number;
+    wrong: number;
+  }>({ id: null, total: 0, correct: 0, wrong: 0 });
+  const topicNameRef = useRef("");
+  // Lời gọi tạo dòng đang bay — chặn hai câu trả lời sát nhau tạo hai buổi học
+  const creatingSessionRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -81,27 +92,34 @@ export default function LearnPage() {
     (async () => {
       setLoading(true);
       setLoadError(null);
+      // Mỗi lần vào học (kể cả bấm Học lại) là một buổi học mới
+      studySessionRef.current = { id: null, total: 0, correct: 0, wrong: 0 };
+      creatingSessionRef.current = null;
       try {
         // Thiếu cài đặt hoặc thiếu tiến độ không được làm hỏng cả phiên học
-        const [settings, topicCards, progressRows] = await Promise.all([
+        const [settings, topicCards, progressRows, topic] = await Promise.all([
           getUserSettings(userId).catch(() => ({
             cards_per_session: DEFAULT_CARDS_PER_SESSION,
           })),
           getCards(topicId),
-          getTopicProgress(userId, topicId).catch(
-            () => [] as CardProgress[]
-          ),
+          getTopicProgress(userId, topicId).catch(() => [] as CardProgress[]),
+          getTopicById(topicId).catch(() => null),
         ]);
         if (cancelled) return;
+
+        topicNameRef.current = topic?.name ?? "";
+        setTopicName(topic?.name ?? "");
 
         const progress: ProgressMap = {};
         for (const row of progressRows) progress[row.card_id] = row;
 
-        // Chủ đề ít thẻ thì mượn thêm thẻ cùng nhóm để đủ 4 lựa chọn.
+        // Chủ đề ít thẻ thì mượn thêm thẻ chủ đề khác để đủ số lựa chọn.
         // Lấy ngay tại đây để đáp án không bị trộn lại giữa chừng.
         const extra =
           topicCards.length < OPTION_COUNT
-            ? await getExtraDistractorCards(topicId).catch(() => [] as Card[])
+            ? await getExtraDistractorCards(topicId).catch(
+                () => [] as CardType[]
+              )
             : [];
         if (cancelled) return;
 
@@ -126,13 +144,13 @@ export default function LearnPage() {
     };
   }, [userId, topicId, sessionKey]);
 
-  /** Nguồn đáp án nhiễu: cả chủ đề, mượn thêm chủ đề cùng nhóm khi cần */
+  /** Nguồn đáp án nhiễu: cả chủ đề, mượn thêm chủ đề khác khi cần */
   const distractorPool = useMemo(
     () => [...allCards, ...extraPool],
     [allCards, extraPool]
   );
 
-  const currentCard: Card | undefined = cards[currentIndex];
+  const currentCard: CardType | undefined = cards[currentIndex];
 
   const options = useMemo(() => {
     if (!currentCard) return [];
@@ -150,6 +168,50 @@ export default function LearnPage() {
       }
     },
     []
+  );
+
+  /**
+   * Ghi lịch sử buổi học. Dòng chỉ được tạo ở câu trả lời ĐẦU TIÊN nên người
+   * chỉ mở ra xem rồi thoát không sinh dữ liệu rác. Mỗi câu sau đó cập nhật
+   * `ended_at`, nhờ vậy buổi bỏ dở vẫn có khoảng thời gian đúng.
+   */
+  const recordStudySession = useCallback(
+    async (uid: string, correct: boolean) => {
+      const s = studySessionRef.current;
+      s.total += 1;
+      if (correct) s.correct += 1;
+      else s.wrong += 1;
+
+      try {
+        if (!s.id && !creatingSessionRef.current) {
+          const p = startStudySession(
+            uid,
+            topicId,
+            topicNameRef.current,
+            correct
+          );
+          creatingSessionRef.current = p;
+          // Hỏng thì xoá cờ để câu sau còn tạo lại được
+          p.catch(() => {
+            creatingSessionRef.current = null;
+          });
+          s.id = await p;
+          return; // dòng vừa tạo đã mang số liệu của chính câu này
+        }
+        if (!s.id && creatingSessionRef.current) {
+          s.id = await creatingSessionRef.current;
+        }
+        if (!s.id) return;
+        await updateStudySession(s.id, {
+          total: s.total,
+          correct: s.correct,
+          wrong: s.wrong,
+        });
+      } catch {
+        // Lịch sử là số liệu phụ — hỏng thì bỏ qua, không cản việc học
+      }
+    },
+    [topicId]
   );
 
   const retryPending = useCallback(async () => {
@@ -174,23 +236,16 @@ export default function LearnPage() {
       correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 }
     );
 
-    // Khen/nhắc bằng tiếng Việt rồi đọc to từ vựng 3 lần cho cả đúng và sai.
-    setSpeaking(true);
-    speakFeedback(correct, currentCard.word, {
-      onDone: () => setSpeaking(false),
-    });
+    // Đọc to từ tiếng Anh đúng một lần, cho cả câu đúng lẫn câu sai
+    speakText(currentCard.word);
 
-    if (userId) void saveAnswer(userId, currentCard.id, correct);
+    if (userId) {
+      void saveAnswer(userId, currentCard.id, correct);
+      void recordStudySession(userId, correct);
+    }
   };
 
-  /** Bỏ qua phần đọc để sang câu tiếp ngay */
-  const skipSpeech = useCallback(() => {
-    cancelSpeech();
-    setSpeaking(false);
-  }, []);
-
   const handleNext = useCallback(() => {
-    if (speaking) return;
     if (currentIndex < cards.length - 1) {
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
@@ -200,9 +255,9 @@ export default function LearnPage() {
       setSessionDone(true);
       void retryPending();
     }
-  }, [speaking, currentIndex, cards.length, retryPending]);
+  }, [currentIndex, cards.length, retryPending]);
 
-  // Phím tắt: 1-4 chọn đáp án, Enter sang câu tiếp, Space bỏ qua phần đọc
+  // Phím tắt: 1-4 chọn đáp án, Enter sang câu tiếp
   useEffect(() => {
     if (loading || sessionDone || !currentCard) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -225,33 +280,18 @@ export default function LearnPage() {
         }
         return;
       }
-      if (e.key === "Enter" && showResult && !speaking) {
+      if (e.key === "Enter" && showResult) {
         e.preventDefault();
         handleNext();
-        return;
-      }
-      if (e.key === " " && speaking) {
-        e.preventDefault();
-        skipSpeech();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    loading,
-    sessionDone,
-    currentCard,
-    options,
-    showResult,
-    speaking,
-    handleNext,
-    skipSpeech,
-  ]);
+  }, [loading, sessionDone, currentCard, options, showResult, handleNext]);
 
   const restart = () => {
     cancelSpeech();
-    setSpeaking(false);
     setCurrentIndex(0);
     setScore({ correct: 0, wrong: 0 });
     setSessionDone(false);
@@ -262,115 +302,117 @@ export default function LearnPage() {
     setSessionKey((k) => k + 1);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Spin size="large" />
-      </div>
-    );
-  }
+  if (loading) return <Loader label="Đang chuẩn bị bài học..." />;
 
   if (loadError) {
     return (
-      <PageContainer className="py-10">
-        <Alert
-          type="error"
-          showIcon
-          message="Không tải được bài học"
-          description={loadError}
+      <Screen width="narrow" className="py-10">
+        <EmptyState
+          emoji="😵"
+          title="Không tải được bài học"
+          hint={loadError}
+          action={
+            <div className="mt-2 flex gap-3">
+              <Button onClick={restart}>Thử lại</Button>
+              <Button tone="plain" onClick={() => router.push("/home")}>
+                Quay lại
+              </Button>
+            </div>
+          }
         />
-        <div className="flex gap-3 mt-4">
-          <Button type="primary" onClick={restart} className="rounded-xl">
-            Thử lại
-          </Button>
-          <Button onClick={() => router.push("/home")} className="rounded-xl">
-            Quay lại
-          </Button>
-        </div>
-      </PageContainer>
+      </Screen>
     );
   }
 
   if (cards.length === 0) {
     return (
-      <PageContainer className="py-20 text-center">
-        <Text>Chủ đề này chưa có thẻ từ vựng nào</Text>
-        <div className="mt-4">
-          <Button onClick={() => router.push("/home")}>Quay lại</Button>
-        </div>
-      </PageContainer>
+      <Screen width="narrow" className="py-10">
+        <EmptyState
+          emoji="📭"
+          title="Chủ đề này chưa có từ nào"
+          hint="Hãy chọn một chủ đề khác để bắt đầu học nhé!"
+          action={
+            <Button className="mt-2" onClick={() => router.push("/home")}>
+              Về trang chủ
+            </Button>
+          }
+        />
+      </Screen>
     );
   }
 
+  // ---------------------------------------------------------------
+  // Màn hình kết quả
+  // ---------------------------------------------------------------
   if (sessionDone) {
     const answered = score.correct + score.wrong;
     const pct = answered === 0 ? 0 : Math.round((score.correct / answered) * 100);
+    const cheer =
+      pct >= 80
+        ? { emoji: "🏆", title: "Xuất sắc!", tone: "leaf" as const }
+        : pct >= 50
+          ? { emoji: "👍", title: "Khá lắm!", tone: "sun" as const }
+          : { emoji: "💪", title: "Cố lên nhé!", tone: "sky" as const };
+
     return (
-      <PageContainer className="py-10 text-center">
-        <div className="bg-white rounded-2xl shadow-sm p-8">
-          <Title level={3}>Hoàn thành!</Title>
+      <Screen width="narrow" className="py-8">
+        <Card className="anim-pop-in overflow-hidden p-6 text-center">
+          <span className="anim-float block text-7xl" role="img" aria-hidden>
+            {cheer.emoji}
+          </span>
+          <h2 className="mt-3 text-3xl text-ink">{cheer.title}</h2>
+          <p className="mt-1 text-ink-soft">{topicName}</p>
+
           <div className="my-6">
-            <Progress
-              type="circle"
+            <div className="font-display text-6xl font-extrabold text-grape">
+              {pct}%
+            </div>
+            <ProgressBar
               percent={pct}
-              strokeColor={
-                pct >= 80 ? "#22c55e" : pct >= 50 ? "#eab308" : "#ef4444"
-              }
-              size={120}
+              tone={cheer.tone}
+              className="mt-3"
+              label="Tỉ lệ trả lời đúng"
             />
           </div>
-          <div className="flex justify-center gap-8 my-4">
-            <div className="text-center">
-              <Text className="text-2xl font-bold text-green-500 block">
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-card bg-leaf-soft p-4">
+              <div className="font-display text-3xl font-extrabold text-leaf-dark">
                 {score.correct}
-              </Text>
-              <Text type="secondary">Đúng</Text>
+              </div>
+              <div className="text-sm font-bold text-leaf-dark">Câu đúng</div>
             </div>
-            <div className="text-center">
-              <Text className="text-2xl font-bold text-red-500 block">
+            <div className="rounded-card bg-cherry-soft p-4">
+              <div className="font-display text-3xl font-extrabold text-cherry-dark">
                 {score.wrong}
-              </Text>
-              <Text type="secondary">Sai</Text>
+              </div>
+              <div className="text-sm font-bold text-cherry-dark">Câu sai</div>
             </div>
           </div>
 
           {pendingCount > 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              className="text-left mb-4"
-              message={`Chưa lưu được ${pendingCount} câu trả lời`}
-              description="Kết quả này chưa vào phần Tiến độ. Kiểm tra kết nối mạng rồi thử lại."
-              action={
-                <Button size="small" loading={retrying} onClick={retryPending}>
-                  Lưu lại
-                </Button>
-              }
+            <OfflineNotice
+              count={pendingCount}
+              retrying={retrying}
+              onRetry={retryPending}
+              className="mt-4"
             />
           )}
 
-          <div className="space-y-3 mt-6">
+          <div className="mt-6 space-y-3">
             <Button
-              type="primary"
-              size="large"
               block
-              icon={<RotateCcw size={18} />}
+              icon={<RotateCcw size={20} strokeWidth={2.5} />}
               onClick={restart}
-              className="h-12 rounded-xl"
             >
               Học lại
             </Button>
-            <Button
-              size="large"
-              block
-              onClick={() => router.push("/home")}
-              className="h-12 rounded-xl"
-            >
+            <Button block tone="plain" onClick={() => router.push("/home")}>
               Về trang chủ
             </Button>
           </div>
-        </div>
-      </PageContainer>
+        </Card>
+      </Screen>
     );
   }
 
@@ -379,198 +421,213 @@ export default function LearnPage() {
   const progressPct = ((currentIndex + 1) / cards.length) * 100;
 
   return (
-    <PageContainer className="py-4">
-      {/* Top bar: back + progress + score */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-1">
-          <Button
-            type="text"
-            aria-label="Quay lại trang chủ"
-            icon={<ArrowLeft size={20} />}
+    <div className="dotted-bg min-h-dvh pb-40">
+      <Screen width="default" className="py-3">
+        {/* Thanh trên: quay lại + tiến độ + điểm */}
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => router.push("/home")}
-            className="min-w-[44px] min-h-[44px]"
+            aria-label="Quay lại trang chủ"
+            className="grid size-11 shrink-0 place-items-center rounded-full border-2 border-cloud-deep bg-white text-ink-soft transition-colors hover:text-ink"
+          >
+            <ArrowLeft size={20} strokeWidth={2.5} />
+          </button>
+
+          <ProgressBar
+            percent={progressPct}
+            tone="leaf"
+            className="flex-1"
+            label={`Câu ${currentIndex + 1} trên ${cards.length}`}
           />
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 size={14} className="text-green-500" />
-              <Text className="text-green-600 font-semibold text-sm">
-                {score.correct}
-              </Text>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <XCircle size={14} className="text-red-500" />
-              <Text className="text-red-600 font-semibold text-sm">
-                {score.wrong}
-              </Text>
-            </div>
-            <Text type="secondary" className="text-sm font-medium">
-              {currentIndex + 1}/{cards.length}
-            </Text>
-          </div>
+
+          <span className="shrink-0 font-display text-base font-extrabold text-ink-soft tabular-nums">
+            {currentIndex + 1}/{cards.length}
+          </span>
         </div>
-        <Progress
-          percent={Math.round(progressPct)}
-          showInfo={false}
-          strokeColor="#4f46e5"
-          trailColor="#e5e7eb"
-          size="small"
-        />
-      </div>
 
-      {pendingCount > 0 && (
-        <Alert
-          type="warning"
-          showIcon
-          className="mb-4"
-          message={`Chưa lưu được ${pendingCount} câu trả lời`}
-          action={
-            <Button size="small" loading={retrying} onClick={retryPending}>
-              Thử lại
-            </Button>
-          }
-        />
-      )}
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <ScoreChip tone="leaf" value={score.correct} label="đúng" />
+          <ScoreChip tone="cherry" value={score.wrong} label="sai" />
+        </div>
 
-      {/* Main content: left + right */}
-      <div className="flashcard-enter flex flex-col sm:flex-row gap-4">
-        {/* Left: image + word + meaning */}
-        <div className="sm:w-1/2">
-          <div className="bg-white rounded-2xl shadow-sm p-6 text-center h-full flex flex-col justify-center">
+        {pendingCount > 0 && (
+          <OfflineNotice
+            count={pendingCount}
+            retrying={retrying}
+            onRetry={retryPending}
+            className="mt-3"
+          />
+        )}
+
+        {/* Nội dung: đề bài trên, đáp án dưới (desktop thì hai cột) */}
+        <div className="mt-4 lg:flex lg:items-start lg:gap-6">
+          <Card
+            key={currentCard.id}
+            className={`anim-slide-in p-5 text-center lg:flex-1 ${
+              showResult ? (isCorrect ? "anim-bounce" : "anim-shake") : ""
+            }`}
+          >
             {currentCard.image && (
-              // eslint-disable-next-line @next/next/no-img-element
+              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={currentCard.image}
                 alt={currentCard.meaning_vi}
-                className="max-w-full max-h-48 object-contain rounded-xl mx-auto mb-4"
+                className="mx-auto mb-4 max-h-52 w-auto rounded-blob object-contain"
               />
             )}
+
+            {/* Nghĩa tiếng Việt luôn hiện — nhiều từ không đoán được qua ảnh */}
+            <h1 className="text-3xl leading-tight text-ink">
+              {currentCard.meaning_vi}
+            </h1>
+
             {showResult ? (
-              <>
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <Title level={3} className="mb-0">
-                    {currentCard.word}
-                  </Title>
-                  <button
-                    onClick={() => speakText(currentCard.word)}
-                    aria-label={`Nghe lại từ ${currentCard.word}`}
-                    className="p-2 rounded-full bg-indigo-100 hover:bg-indigo-200 transition-colors"
-                  >
-                    <Volume2 size={20} className="text-indigo-600" />
-                  </button>
-                </div>
-                <Text type="secondary" className="text-base">
-                  {currentCard.meaning_vi}
-                </Text>
-                <div
-                  className={`mt-3 py-2 px-3 rounded-lg text-sm font-medium ${
-                    isCorrect
-                      ? "bg-green-50 text-green-700"
-                      : "bg-red-50 text-red-700"
-                  }`}
-                >
-                  {isCorrect
-                    ? "Chính xác!"
-                    : `Sai rồi! Đáp án: ${currentCard.word}`}
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Luôn hiện nghĩa tiếng Việt — ảnh chỉ là gợi ý thêm, vì nhiều
-                    từ (happy, remember...) không thể đoán được qua ảnh */}
-                <Title level={3} className="mb-2">
-                  {currentCard.meaning_vi}
-                </Title>
-                <Text type="secondary" className="text-base">
-                  Chọn từ tiếng Anh đúng
-                </Text>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Right: answer options */}
-        <div className="sm:w-1/2">
-          <div className="grid grid-cols-2 sm:grid-cols-1 gap-3 content-start">
-            {options.map((opt, i) => {
-              const isSelectedAnswer = selectedAnswer === opt.id;
-              const isCorrectAnswer = opt.id === currentCard.id;
-              let btnClass =
-                "w-full min-h-[52px] py-3 px-4 rounded-xl text-base font-medium border-2 text-left";
-
-              if (showResult) {
-                if (isCorrectAnswer) {
-                  btnClass += " border-green-500 bg-green-50 text-green-700";
-                } else if (isSelectedAnswer && !isCorrectAnswer) {
-                  btnClass += " border-red-500 bg-red-50 text-red-700";
-                } else {
-                  btnClass += " border-gray-200 opacity-50";
-                }
-              } else {
-                btnClass +=
-                  " border-gray-200 hover:border-indigo-300 active:bg-indigo-50";
-              }
-
-              return (
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <span className="font-display text-2xl font-extrabold text-grape">
+                  {currentCard.word}
+                </span>
                 <button
-                  key={opt.id}
-                  className={btnClass}
-                  onClick={() => handleAnswer(opt.id)}
-                  disabled={showResult}
+                  onClick={() => speakText(currentCard.word)}
+                  aria-label={`Nghe lại từ ${currentCard.word}`}
+                  className="grid size-10 place-items-center rounded-full bg-grape-soft text-grape transition-transform active:scale-90"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="break-words">{opt.text}</span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      {showResult && isCorrectAnswer && (
-                        <CheckCircle2 size={18} className="text-green-500" />
-                      )}
-                      {showResult && isSelectedAnswer && !isCorrectAnswer && (
-                        <XCircle size={18} className="text-red-500" />
-                      )}
-                      {!showResult && (
-                        <kbd className="hidden sm:inline-block text-xs text-gray-400 border border-gray-200 rounded px-1.5">
-                          {i + 1}
-                        </kbd>
-                      )}
-                    </span>
-                  </div>
+                  <Volume2 size={20} strokeWidth={2.5} />
                 </button>
+              </div>
+            ) : (
+              <p className="mt-2 font-bold text-ink-soft">
+                Từ tiếng Anh là gì?
+              </p>
+            )}
+          </Card>
+
+          {/* Đáp án */}
+          <div className="mt-4 space-y-3 lg:mt-0 lg:flex-1">
+            {options.map((opt, i) => {
+              let state: OptionState = "idle";
+              if (showResult) {
+                if (opt.id === currentCard.id) state = "correct";
+                else if (opt.id === selectedAnswer) state = "wrong";
+                else state = "dimmed";
+              }
+              return (
+                <OptionButton
+                  key={opt.id}
+                  index={i}
+                  text={opt.text}
+                  state={state}
+                  disabled={showResult}
+                  onClick={() => handleAnswer(opt.id)}
+                />
               );
             })}
-
-            {/* Next button — mở sau khi đọc xong, hoặc bấm "Bỏ qua" để đi ngay */}
-            {showResult && (
-              <div className="mt-2 space-y-2 pop-in">
-                <Button
-                  type="primary"
-                  size="large"
-                  block
-                  loading={speaking}
-                  disabled={speaking}
-                  onClick={handleNext}
-                  className="h-12 rounded-xl text-base font-semibold"
-                >
-                  {speaking
-                    ? "Đang đọc từ..."
-                    : currentIndex < cards.length - 1
-                      ? "Tiếp theo"
-                      : "Xem kết quả"}
-                </Button>
-                {speaking && (
-                  <Button
-                    type="text"
-                    block
-                    icon={<SkipForward size={16} />}
-                    onClick={skipSpeech}
-                    className="rounded-xl"
-                  >
-                    Bỏ qua
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
         </div>
-      </div>
-    </PageContainer>
+      </Screen>
+
+      {/* Thanh phản hồi dính đáy — luôn trong tầm ngón tay cái */}
+      {showResult && (
+        <div
+          className={`anim-pop-in fixed inset-x-0 bottom-0 z-40 border-t-4 pb-[max(1rem,var(--safe-bottom))] pt-4 ${
+            isCorrect
+              ? "border-leaf bg-leaf-soft"
+              : "border-cherry bg-cherry-soft"
+          }`}
+        >
+          <Screen width="default">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p
+                  className={`font-display text-xl font-extrabold ${
+                    isCorrect ? "text-leaf-dark" : "text-cherry-dark"
+                  }`}
+                >
+                  {isCorrect ? "🎉 Chính xác!" : "😅 Chưa đúng rồi"}
+                </p>
+                {!isCorrect && (
+                  <p className="truncate text-sm font-bold text-cherry-dark">
+                    Đáp án: {currentCard.word}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  tone={isCorrect ? "leaf" : "cherry"}
+                  onClick={handleNext}
+                >
+                  {currentIndex < cards.length - 1
+                    ? "Tiếp theo"
+                    : "Xem kết quả"}
+                </Button>
+              </div>
+            </div>
+          </Screen>
+        </div>
+      )}
+
+      {/* Gợi ý phím tắt — chỉ hiện trên máy tính */}
+      {!showResult && (
+        <p className="mt-6 hidden text-center text-sm text-ink-faint lg:block">
+          Mẹo: bấm phím {OPTION_LETTERS.slice(0, options.length).join(", ")}{" "}
+          tương ứng 1–{options.length} để chọn nhanh
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Chip điểm nhỏ ở góc phải thanh tiến độ */
+function ScoreChip({
+  tone,
+  value,
+  label,
+}: {
+  tone: "leaf" | "cherry";
+  value: number;
+  label: string;
+}) {
+  const styles =
+    tone === "leaf"
+      ? "bg-leaf-soft text-leaf-dark"
+      : "bg-cherry-soft text-cherry-dark";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 font-display text-sm font-extrabold ${styles}`}
+    >
+      {value}
+      <span className="font-body text-xs font-bold opacity-80">{label}</span>
+    </span>
+  );
+}
+
+/** Cảnh báo chưa lưu được kết quả (mất mạng) */
+function OfflineNotice({
+  count,
+  retrying,
+  onRetry,
+  className = "",
+}: {
+  count: number;
+  retrying: boolean;
+  onRetry: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-card border-2 border-sun bg-sun-soft p-3 ${className}`}
+    >
+      <CloudOff size={22} className="shrink-0 text-sun-dark" />
+      <p className="flex-1 text-sm font-bold text-ink">
+        Chưa lưu được {count} câu trả lời
+      </p>
+      <button
+        onClick={onRetry}
+        disabled={retrying}
+        className="shrink-0 rounded-full bg-white px-3 py-1.5 text-sm font-extrabold text-ink disabled:opacity-50"
+      >
+        {retrying ? "Đang lưu..." : "Thử lại"}
+      </button>
+    </div>
   );
 }

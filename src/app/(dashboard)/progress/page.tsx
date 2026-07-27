@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getProgress } from "@/lib/db";
-import { Typography, Spin, Empty, message } from "antd";
-import { ChevronDown, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
-import { PageContainer } from "@/components/MainLayout";
+import { getProgress, getStudySessions } from "@/lib/db";
+import { message } from "antd";
+import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Screen, Loader, EmptyState } from "@/components/ui/Layout";
+import Card from "@/components/ui/Card";
+import ProgressBar from "@/components/ui/ProgressBar";
+import StudyHistory from "@/components/StudyHistory";
 import { isMastered } from "@/lib/constants";
-
-const { Title, Text } = Typography;
+import type { StudySession } from "@/lib/types";
 
 interface ProgressItem {
   id: string;
@@ -22,10 +24,7 @@ interface ProgressItem {
     word: string;
     meaning_vi: string;
     topic_id: string;
-    topics: {
-      id: string;
-      name: string;
-    };
+    topics: { id: string; name: string };
   };
 }
 
@@ -35,12 +34,16 @@ interface TopicGroup {
   items: ProgressItem[];
 }
 
+type TabKey = "sessions" | "words";
+
 export default function ProgressPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ProgressItem[]>([]);
+  const [sessions, setSessions] = useState<StudySession[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [tab, setTab] = useState<TabKey>("sessions");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -56,8 +59,14 @@ export default function ProgressPage() {
     if (!userId) return;
     (async () => {
       try {
-        const data = await getProgress(userId);
+        // Bảng study_sessions có thể chưa được tạo (chưa chạy migration) —
+        // không được vì thế mà mất luôn phần tiến độ từ vựng
+        const [data, sessionRows] = await Promise.all([
+          getProgress(userId),
+          getStudySessions(userId).catch(() => [] as StudySession[]),
+        ]);
         setProgress(data as ProgressItem[]);
+        setSessions(sessionRows);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Lỗi không xác định";
         message.error("Lỗi tải dữ liệu: " + msg);
@@ -68,117 +77,147 @@ export default function ProgressPage() {
   }, [userId]);
 
   const grouped: TopicGroup[] = Object.values(
-    progress.reduce((acc, item) => {
-      const tId = item.cards?.topics?.id || "unknown";
-      const tName = item.cards?.topics?.name || "Không có chủ đề";
-      if (!acc[tId]) {
-        acc[tId] = { topicId: tId, topicName: tName, items: [] };
-      }
-      acc[tId].items.push(item);
-      return acc;
-    }, {} as Record<string, TopicGroup>)
+    progress.reduce(
+      (acc, item) => {
+        const tId = item.cards?.topics?.id || "unknown";
+        const tName = item.cards?.topics?.name || "Không có chủ đề";
+        if (!acc[tId]) acc[tId] = { topicId: tId, topicName: tName, items: [] };
+        acc[tId].items.push(item);
+        return acc;
+      },
+      {} as Record<string, TopicGroup>
+    )
   );
 
-  const toggleExpand = (tId: string) => {
-    setExpanded((prev) => ({ ...prev, [tId]: !prev[tId] }));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Spin size="large" />
-      </div>
-    );
-  }
+  if (loading) return <Loader />;
 
   return (
-    <PageContainer className="py-4">
-      <div className="mb-5">
-        <Title level={4} className="mb-1">Tiến độ học tập</Title>
-        <Text type="secondary">Theo dõi quá trình học từ vựng</Text>
+    <Screen className="py-4">
+      <h1 className="text-2xl text-ink">Tiến độ học tập</h1>
+      <p className="mt-1 font-bold text-ink-soft">
+        Thời gian vào học và kết quả từng chủ đề
+      </p>
+
+      {/* Chuyển tab dạng viên thuốc — to, dễ bấm bằng ngón cái */}
+      <div
+        role="tablist"
+        aria-label="Chế độ xem tiến độ"
+        className="mt-4 flex gap-1 rounded-pill bg-cloud-deep p-1"
+      >
+        {(
+          [
+            { key: "sessions", label: "Buổi học" },
+            { key: "words", label: "Từ vựng" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 rounded-pill py-2.5 font-display font-extrabold transition-colors ${
+              tab === t.key ? "bg-white text-grape shadow-sm" : "text-ink-soft"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {progress.length === 0 ? (
-        <Empty description="Chưa có dữ liệu học tập" />
-      ) : (
-        <div className="space-y-3">
-          {grouped.map((group) => {
-            const isOpen = expanded[group.topicId] ?? false;
-            const masteredCount = group.items.filter((i) =>
-              isMastered(i.streak)
-            ).length;
-            return (
-              <div key={group.topicId}>
-                {/* Topic header */}
-                <button
-                  onClick={() => toggleExpand(group.topicId)}
-                  className="w-full flex items-center justify-between py-3 px-1 text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    {isOpen ? (
-                      <ChevronDown size={18} className="text-gray-500" />
-                    ) : (
-                      <ChevronRight size={18} className="text-gray-500" />
-                    )}
-                    <Text strong className="text-base">{group.topicName}</Text>
-                    <Text type="secondary" className="text-sm">
-                      ({group.items.length} từ)
-                    </Text>
-                  </div>
-                  {masteredCount > 0 && (
-                    <Text type="secondary" className="text-sm">
-                      Đã thuộc: {masteredCount}/{group.items.length}
-                    </Text>
-                  )}
-                </button>
+      <div className="mt-5">
+        {tab === "sessions" ? (
+          <StudyHistory sessions={sessions} />
+        ) : progress.length === 0 ? (
+          <EmptyState
+            emoji="🌱"
+            title="Chưa học từ nào"
+            hint="Chọn một chủ đề ở trang chủ để bắt đầu nhé!"
+          />
+        ) : (
+          <div className="space-y-3">
+            {grouped.map((group) => {
+              const isOpen = expanded[group.topicId] ?? false;
+              const masteredCount = group.items.filter((i) =>
+                isMastered(i.streak)
+              ).length;
+              const pct = (masteredCount / group.items.length) * 100;
 
-                {/* Word list */}
-                {isOpen && (
-                  <div className="ml-2 space-y-1 pb-2">
-                    {group.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-gray-50"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <Text strong className="text-base block">
-                            {item.cards?.word || "Unknown"}
-                          </Text>
-                          <Text type="secondary" className="text-sm">
-                            {item.cards?.meaning_vi || ""}
-                          </Text>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          <div className="flex items-center gap-1">
-                            <CheckCircle2 size={14} className="text-green-500" />
-                            <Text className="text-green-600 text-sm font-medium">
+              return (
+                <Card key={group.topicId} className="overflow-hidden">
+                  <button
+                    onClick={() =>
+                      setExpanded((p) => ({
+                        ...p,
+                        [group.topicId]: !p[group.topicId],
+                      }))
+                    }
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center gap-3 p-4 text-left"
+                  >
+                    <span className="shrink-0 text-ink-faint">
+                      {isOpen ? (
+                        <ChevronDown size={20} strokeWidth={2.5} />
+                      ) : (
+                        <ChevronRight size={20} strokeWidth={2.5} />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-display text-base font-extrabold text-ink">
+                        {group.topicName}
+                      </p>
+                      <p className="text-sm font-bold text-ink-soft">
+                        Đã thuộc {masteredCount}/{group.items.length} từ
+                      </p>
+                      <ProgressBar
+                        percent={pct}
+                        tone="leaf"
+                        className="mt-1.5 h-2"
+                        label={`${group.topicName}: ${masteredCount} trên ${group.items.length} từ`}
+                      />
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t-2 border-cloud-deep">
+                      {group.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-3 border-b border-cloud px-4 py-3 last:border-b-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-display text-base font-extrabold text-ink">
+                              {item.cards?.word || "—"}
+                            </p>
+                            <p className="truncate text-sm text-ink-soft">
+                              {item.cards?.meaning_vi || ""}
+                            </p>
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-leaf-soft px-2 py-1 text-sm font-extrabold text-leaf-dark">
+                              <Check size={13} strokeWidth={3} />
                               {item.correct_count}
-                            </Text>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <XCircle size={14} className="text-red-500" />
-                            <Text className="text-red-500 text-sm font-medium">
-                              {item.wrong_count}
-                            </Text>
-                          </div>
-                          {item.streak >= 3 && (
-                            <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                              Đã thuộc
                             </span>
-                          )}
+                            <span className="inline-flex items-center gap-1 rounded-full bg-cherry-soft px-2 py-1 text-sm font-extrabold text-cherry-dark">
+                              <X size={13} strokeWidth={3} />
+                              {item.wrong_count}
+                            </span>
+                            {isMastered(item.streak) && (
+                              <span className="text-xl" title="Đã thuộc">
+                                ⭐
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Divider */}
-                <div className="border-b border-gray-100" />
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </PageContainer>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Screen>
   );
 }

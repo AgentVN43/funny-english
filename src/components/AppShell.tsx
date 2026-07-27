@@ -4,22 +4,22 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { emailToPhone } from "@/lib/auth";
-import { Drawer, Button, Typography, Avatar, Divider, message } from "antd";
+import { message } from "antd";
 import {
   Home,
   BarChart3,
   Settings,
   LogOut,
   Menu,
+  X,
   Shield,
   Layers,
   Newspaper,
   FolderTree,
   LogIn,
-  User as UserIcon,
+  Sparkles,
 } from "lucide-react";
-
-const { Text } = Typography;
+import Button from "@/components/ui/Button";
 
 interface NavItem {
   label: string;
@@ -34,7 +34,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [profile, setProfile] = useState<{ email: string; role: string } | null>(null);
+  const [profile, setProfile] = useState<{
+    email: string;
+    role: string;
+  } | null>(null);
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -61,6 +64,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Khoá cuộn nền khi menu mở
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     message.success("Đã đăng xuất");
@@ -71,12 +82,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const navItems: NavItem[] = [
-    { label: "Trang chủ", icon: <Home size={20} />, path: "/home" },
-    { label: "Tiến độ", icon: <BarChart3 size={20} />, path: "/progress", authOnly: true },
-    { label: "Cài đặt", icon: <Settings size={20} />, path: "/settings", authOnly: true },
-    { label: "Quản lý Categories", icon: <FolderTree size={20} />, path: "/admin/categories", adminOnly: true },
-    { label: "Quản lý Chủ đề", icon: <Layers size={20} />, path: "/admin/topics", adminOnly: true },
-    { label: "Quản lý Thẻ", icon: <Newspaper size={20} />, path: "/admin/cards", adminOnly: true },
+    { label: "Trang chủ", icon: <Home size={22} />, path: "/home" },
+    {
+      label: "Tiến độ",
+      icon: <BarChart3 size={22} />,
+      path: "/progress",
+      authOnly: true,
+    },
+    {
+      label: "Cài đặt",
+      icon: <Settings size={22} />,
+      path: "/settings",
+      authOnly: true,
+    },
+    {
+      label: "Quản lý Categories",
+      icon: <FolderTree size={22} />,
+      path: "/admin/categories",
+      adminOnly: true,
+    },
+    {
+      label: "Quản lý Chủ đề",
+      icon: <Layers size={22} />,
+      path: "/admin/topics",
+      adminOnly: true,
+    },
+    {
+      label: "Quản lý Thẻ",
+      icon: <Newspaper size={22} />,
+      path: "/admin/cards",
+      adminOnly: true,
+    },
   ];
 
   const filteredNav = navItems.filter((item) => {
@@ -85,147 +121,160 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return true;
   });
 
-  if (loading) {
-    return <div className="min-h-dvh bg-gray-50">{children}</div>;
-  }
+  const isAdmin = profile?.role === "admin";
+
+  if (loading) return <div className="min-h-dvh bg-cloud">{children}</div>;
+
+  // Trang học chiếm trọn màn hình, không cần thanh trên
+  const isLearnPage = pathname?.startsWith("/learn/");
 
   return (
-    <div className="min-h-dvh bg-gray-50">
-      {/* Top bar - mobile app bar; ẩn trên desktop tại /home (trang landing có navbar riêng) */}
-      <div
-        className={`sticky top-0 z-50 bg-white border-b border-gray-200 ${
-          pathname === "/home" ? "lg:hidden" : ""
-        }`}
-      >
-        <div className="w-full max-w-lg lg:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button
-              type="text"
-              icon={<Menu size={24} />}
+    <div className="min-h-dvh bg-cloud">
+      {!isLearnPage && (
+        <header className="sticky top-0 z-40 border-b-2 border-cloud-deep bg-white">
+          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3 px-4 py-2.5 lg:max-w-6xl">
+            <button
               onClick={() => setOpen(true)}
-              className="flex items-center justify-center min-w-[44px] min-h-[44px]"
-            />
-            <Text strong className="text-lg">
-              Funny English
-            </Text>
-            {profile?.role === "admin" && (
-              <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
-                <Shield size={12} />
-                Admin
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
+              aria-label="Mở menu"
+              className="grid size-11 place-items-center rounded-full text-ink transition-colors hover:bg-cloud"
+            >
+              <Menu size={24} strokeWidth={2.5} />
+            </button>
+
+            <button
+              onClick={() => router.push("/home")}
+              className="flex min-w-0 items-center gap-2"
+            >
+              <span className="text-2xl" aria-hidden>
+                🦉
+              </span>
+              <span className="truncate font-display text-lg font-extrabold text-ink">
+                Funny English
+              </span>
+              {isAdmin && (
+                <span className="hidden items-center gap-1 rounded-full bg-grape-soft px-2 py-0.5 text-xs font-extrabold text-grape sm:inline-flex">
+                  <Shield size={11} />
+                  Admin
+                </span>
+              )}
+            </button>
+
             {authed ? (
-              <>
-                {profile?.role === "user" && (
-                  <Button
-                    type="text"
-                    icon={<Settings size={20} />}
-                    onClick={() => router.push("/settings")}
-                    className="min-w-[44px] min-h-[44px]"
-                  />
-                )}
-                <Avatar
-                  size="small"
-                  className="bg-indigo-500 cursor-pointer"
-                  onClick={() => setOpen(true)}
-                >
-                  {profile?.email?.[0]?.toUpperCase() || "U"}
-                </Avatar>
-              </>
+              <button
+                onClick={() => setOpen(true)}
+                aria-label="Tài khoản"
+                className="grid size-10 shrink-0 place-items-center rounded-full bg-grape font-display text-lg font-extrabold text-white"
+              >
+                {emailToPhone(profile?.email)?.[0]?.toUpperCase() ?? "U"}
+              </button>
             ) : (
               <Button
-                type="primary"
-                icon={<LogIn size={16} />}
+                size="md"
+                icon={<LogIn size={18} strokeWidth={2.5} />}
                 onClick={() => router.push("/login")}
-                className="rounded-xl"
               >
-                Đăng nhập
+                Vào học
               </Button>
             )}
           </div>
-        </div>
-      </div>
+        </header>
+      )}
 
-      {/* Drawer */}
-      <Drawer
-        title={
-          authed ? (
-            <div className="flex items-center gap-2">
-              <Avatar className="bg-indigo-500">
-                {profile?.email?.[0]?.toUpperCase() || "U"}
-              </Avatar>
-              <div>
-                <Text strong className="block text-sm">
-                  {emailToPhone(profile?.email) || "User"}
-                </Text>
-                <Text type="secondary" className="text-xs">
-                  {profile?.role === "admin" ? "Admin" : "Học viên"}
-                </Text>
+      {/* Menu trượt */}
+      {open && (
+        <div className="fixed inset-0 z-50">
+          <button
+            aria-label="Đóng menu"
+            onClick={() => setOpen(false)}
+            className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
+          />
+
+          <nav className="anim-slide-in relative flex h-full w-[86%] max-w-xs flex-col bg-white shadow-2xl">
+            {/* Đầu menu */}
+            <div className="flex items-start justify-between gap-2 bg-grape p-4 pt-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className="grid size-12 shrink-0 place-items-center rounded-full bg-white/20 text-2xl"
+                  aria-hidden
+                >
+                  {authed ? "🧒" : "👋"}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-display text-lg font-extrabold text-white">
+                    {authed
+                      ? emailToPhone(profile?.email) || "Bạn nhỏ"
+                      : "Xin chào!"}
+                  </p>
+                  <p className="text-sm font-bold text-white/80">
+                    {authed
+                      ? isAdmin
+                        ? "Quản trị viên"
+                        : "Học viên"
+                      : "Chưa đăng nhập"}
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Đóng menu"
+                className="grid size-9 shrink-0 place-items-center rounded-full text-white/80 transition-colors hover:bg-white/20"
+              >
+                <X size={20} strokeWidth={2.5} />
+              </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Avatar className="bg-gray-300">
-                <UserIcon size={16} />
-              </Avatar>
-              <Text type="secondary" className="text-sm">
-                Chưa đăng nhập
-              </Text>
-            </div>
-          )
-        }
-        placement="left"
-        onClose={() => setOpen(false)}
-        open={open}
-        size="default"
-        styles={{ body: { padding: 0 } }}
-      >
-        <div className="py-2">
-          {filteredNav.map((item) => (
-            <button
-              key={item.path}
-              onClick={() => {
-                setOpen(false);
-                router.push(item.path);
-              }}
-              className={`w-full flex items-center gap-3 px-6 py-3.5 text-left transition-colors min-h-[48px] ${
-                pathname === item.path
-                  ? "bg-indigo-50 text-indigo-600 border-r-2 border-indigo-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              {item.icon}
-              <span className="font-medium">{item.label}</span>
-            </button>
-          ))}
-          <Divider className="my-2" />
-          {authed ? (
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-6 py-3.5 text-left text-red-500 hover:bg-red-50 transition-colors min-h-[48px]"
-            >
-              <LogOut size={20} />
-              <span className="font-medium">Đăng xuất</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                setOpen(false);
-                router.push("/login");
-              }}
-              className="w-full flex items-center gap-3 px-6 py-3.5 text-left text-indigo-600 hover:bg-indigo-50 transition-colors min-h-[48px]"
-            >
-              <LogIn size={20} />
-              <span className="font-medium">Đăng nhập</span>
-            </button>
-          )}
-        </div>
-      </Drawer>
 
-      {/* Page content - centered via PageContainer in each page */}
-      <main className="pb-20">{children}</main>
+            {/* Danh sách mục */}
+            <div className="flex-1 overflow-y-auto p-3">
+              {filteredNav.map((item) => {
+                const active = pathname === item.path;
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => {
+                      setOpen(false);
+                      router.push(item.path);
+                    }}
+                    className={`mb-1 flex w-full items-center gap-3 rounded-pill px-4 py-3 text-left font-display font-extrabold transition-colors ${
+                      active
+                        ? "bg-grape-soft text-grape"
+                        : "text-ink hover:bg-cloud"
+                    }`}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Chân menu */}
+            <div className="border-t-2 border-cloud-deep p-3">
+              {authed ? (
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-3 rounded-pill px-4 py-3 text-left font-display font-extrabold text-cherry transition-colors hover:bg-cherry-soft"
+                >
+                  <LogOut size={22} />
+                  Đăng xuất
+                </button>
+              ) : (
+                <Button
+                  block
+                  icon={<Sparkles size={18} strokeWidth={2.5} />}
+                  onClick={() => {
+                    setOpen(false);
+                    router.push("/login");
+                  }}
+                >
+                  Bắt đầu học
+                </Button>
+              )}
+            </div>
+          </nav>
+        </div>
+      )}
+
+      <main className={isLearnPage ? "" : "pb-16"}>{children}</main>
     </div>
   );
 }
