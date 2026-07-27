@@ -1,7 +1,14 @@
 import { supabase } from "./supabase";
 import { DEFAULT_CARDS_PER_SESSION, MASTERY_STREAK } from "./constants";
 import type { CardProgress } from "./session";
-import type { Category, Topic, Card, Progress, UserSettings } from "./types";
+import type {
+  Category,
+  Topic,
+  Card,
+  Progress,
+  StudySession,
+  UserSettings,
+} from "./types";
 
 // Categories (nhóm cấp cao)
 export async function getCategories() {
@@ -46,6 +53,16 @@ export async function getTopics(categoryId?: string) {
   const { data, error } = await query.order("name");
   if (error) throw error;
   return data as Topic[];
+}
+
+export async function getTopicById(id: string) {
+  const { data, error } = await supabase
+    .from("topics")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Topic | null;
 }
 
 export async function createTopic(
@@ -227,6 +244,68 @@ export async function upsertProgress(
     .single();
   if (error) throw error;
   return data as Progress;
+}
+
+// Study sessions (lịch sử từng buổi học)
+
+/**
+ * Mở một buổi học. Gọi khi trả lời câu ĐẦU TIÊN chứ không phải lúc mở trang,
+ * để người chỉ bấm vào xem rồi thoát không sinh dòng rác.
+ */
+export async function startStudySession(
+  userId: string,
+  topicId: string,
+  topicName: string,
+  isCorrect: boolean
+) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("study_sessions")
+    .insert({
+      user_id: userId,
+      topic_id: topicId,
+      topic_name: topicName,
+      total_questions: 1,
+      correct_count: isCorrect ? 1 : 0,
+      wrong_count: isCorrect ? 0 : 1,
+      started_at: now,
+      ended_at: now,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+/**
+ * Cập nhật sau mỗi câu trả lời. `ended_at` luôn là câu gần nhất, nên buổi học
+ * bỏ dở giữa chừng vẫn có khoảng thời gian đúng.
+ */
+export async function updateStudySession(
+  sessionId: string,
+  totals: { total: number; correct: number; wrong: number }
+) {
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({
+      total_questions: totals.total,
+      correct_count: totals.correct,
+      wrong_count: totals.wrong,
+      ended_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId);
+  if (error) throw error;
+}
+
+export async function getStudySessions(userId: string, limit = 100) {
+  const { data, error } = await supabase
+    .from("study_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as StudySession[];
 }
 
 // User Settings

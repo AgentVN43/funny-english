@@ -44,6 +44,23 @@ export interface UserSettings {
   updated_at: string;
 }
 
+/** Một lượt học một chủ đề — dùng cho màn hình lịch sử theo ngày/giờ */
+export interface StudySession {
+  id: string;
+  user_id: string;
+  topic_id: string | null;
+  /** Tên chủ đề chụp tại lúc học, để xoá/đổi tên sau không hỏng lịch sử */
+  topic_name: string;
+  total_questions: number;
+  correct_count: number;
+  wrong_count: number;
+  /** Lúc trả lời câu đầu tiên */
+  started_at: string;
+  /** Lúc trả lời câu gần nhất */
+  ended_at: string;
+  created_at: string;
+}
+
 export interface Progress {
   id: string;
   user_id: string;
