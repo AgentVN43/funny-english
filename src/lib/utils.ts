@@ -7,201 +7,54 @@ export function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
-export function pickRandom<T>(array: T[], count: number): T[] {
-  return shuffleArray(array).slice(0, count);
-}
-
 function getVoices(): SpeechSynthesisVoice[] {
   if (typeof window === "undefined" || !window.speechSynthesis) return [];
   return window.speechSynthesis.getVoices();
 }
 
-function findVoice(lang: string, gender: "female" | "male"): SpeechSynthesisVoice | undefined {
-  const voices = getVoices();
+/** Ưu tiên giọng nữ cho hợp nội dung trẻ em, không có thì lấy giọng đầu tiên đúng ngôn ngữ */
+function findVoice(lang: string): SpeechSynthesisVoice | undefined {
   const langPrefix = lang.split("-")[0];
-  const candidates = voices.filter(
+  const candidates = getVoices().filter(
     (v) => v.lang === lang || v.lang.startsWith(langPrefix)
   );
-  const femaleHints = ["female", "zira", "hoai", "hirai", "samantha", "karen", "moira", "tessa", "google"];
-  const maleHints = ["male", "mark", "david", "james", "george", "nam", "minh", "daniel", "thomas"];
-  const hints = gender === "female" ? femaleHints : maleHints;
-  const genderMatch = candidates.find((v) =>
-    hints.some((h) => v.name.toLowerCase().includes(h))
+  const femaleHints = [
+    "female",
+    "zira",
+    "samantha",
+    "karen",
+    "moira",
+    "tessa",
+    "google",
+  ];
+  const femaleMatch = candidates.find((v) =>
+    femaleHints.some((h) => v.name.toLowerCase().includes(h))
   );
-  return genderMatch || candidates[0];
+  return femaleMatch || candidates[0];
 }
 
-function makeUtterance(text: string, lang: string, rate: number) {
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = lang;
-  utterance.rate = rate;
-  const voice = findVoice(lang, "female");
-  if (voice) utterance.voice = voice;
-  return utterance;
-}
-
-/**
- * Số hiệu lượt đọc hiện tại. Tăng mỗi khi có yêu cầu huỷ hoặc bắt đầu lượt mới.
- *
- * Cần thiết vì `speechSynthesis.cancel()` làm trình duyệt bắn `end`/`error`
- * cho câu đang đọc — mà đó chính là tín hiệu "đọc câu tiếp theo". Không có
- * số hiệu này thì huỷ xong nó lại đọc tiếp câu sau, nút "Bỏ qua" vô tác dụng
- * và loa vẫn đọc sau khi đã rời trang học.
- */
-let speechGeneration = 0;
-
-/** Huỷ mọi phát âm đang chờ — gọi khi bỏ qua, chuyển thẻ hoặc rời trang */
+/** Huỷ phát âm đang chạy — gọi khi chuyển thẻ hoặc rời trang học */
 export function cancelSpeech() {
-  speechGeneration++;
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
 }
 
+/**
+ * Đọc to một từ, đúng một lần.
+ *
+ * Huỷ phần đang đọc dở trước đã: trả lời nhanh hai câu liên tiếp mà không huỷ
+ * thì trình duyệt xếp hàng và đọc chồng từ của câu trước lên câu sau.
+ */
 export function speakText(text: string, lang = "en-US") {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.speak(makeUtterance(text, lang, 0.9));
-}
-
-export function speakVietnamese(text: string) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.speak(makeUtterance(text, "vi-VN", 1));
-}
-
-interface SpeechItem {
-  text: string;
-  lang?: string;
-  rate?: number;
-}
-
-/**
- * Hạn chờ tối đa trước khi coi như đã đọc xong (chống treo UI nếu onend không bắn).
- * Scale theo độ dài văn bản vì nội dung có thể là câu dài, không chỉ từ đơn.
- * Ước lượng rất thoáng (~4 ký tự/giây) để không bắn sớm khi TTS vẫn đang đọc.
- */
-function watchdogMs(items: SpeechItem[], gapMs: number): number {
-  const chars = items.reduce((sum, i) => sum + i.text.length, 0);
-  return Math.max(20000, chars * 250 + items.length * gapMs + 5000);
-}
-
-/**
- * Đọc lần lượt nhiều câu, chờ câu trước xong mới đọc câu sau.
- * Dùng onend thay vì setTimeout cố định để từ dài không bị cắt hoặc chồng tiếng,
- * và cho phép trộn tiếng Việt (câu khen) với tiếng Anh (từ vựng).
- *
- * `onDone` luôn được gọi đúng một lần — kể cả khi thiết bị không có TTS,
- * trình duyệt chặn phát âm, hoặc utterance lỗi — để UI không bị kẹt.
- */
-export function speakSequence(
-  items: SpeechItem[],
-  opts: { gapMs?: number; onDone?: () => void } = {}
-) {
-  const { gapMs = 350, onDone } = opts;
-
-  const queue = items.filter((i) => i.text);
-  if (
-    typeof window === "undefined" ||
-    !window.speechSynthesis ||
-    queue.length === 0
-  ) {
-    onDone?.();
-    return;
-  }
+  if (!text.trim()) return;
 
   cancelSpeech();
-  const generation = speechGeneration;
-  /** Lượt đọc này đã bị huỷ hoặc bị lượt mới thay thế */
-  const isStale = () => speechGeneration !== generation;
 
-  let index = 0;
-  let finished = false;
-
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(watchdog);
-    onDone?.();
-  };
-
-  /**
-   * Dừng hẳn mà KHÔNG gọi `onDone`: lượt này đã bị huỷ nên bên gọi hoặc đã tự
-   * mở khoá giao diện (bấm Bỏ qua), hoặc đang chờ lượt mới báo xong. Gọi
-   * `onDone` ở đây sẽ mở khoá nhầm cho lượt đọc kế tiếp.
-   */
-  const abort = () => {
-    finished = true;
-    clearTimeout(watchdog);
-  };
-
-  const watchdog = setTimeout(() => {
-    if (isStale()) abort();
-    else finish();
-  }, watchdogMs(queue, gapMs));
-
-  const speakNext = () => {
-    if (isStale()) return abort();
-    const { text, lang = "en-US", rate = 0.9 } = queue[index];
-    index += 1;
-    const utterance = makeUtterance(text, lang, rate);
-    const advance = () => {
-      // Huỷ giữa chừng cũng bắn end/error — phải dừng, không đọc tiếp
-      if (isStale()) return abort();
-      if (index < queue.length) setTimeout(speakNext, gapMs);
-      else finish();
-    };
-    utterance.onend = advance;
-    // Trình duyệt lỗi giữa chừng thì vẫn chạy tiếp câu sau
-    utterance.onerror = advance;
-    window.speechSynthesis.speak(utterance);
-  };
-
-  speakNext();
-}
-
-const CORRECT_PHRASES = [
-  "Giỏi lắm!",
-  "Đúng rồi!",
-  "Tuyệt vời!",
-  "Làm tốt lắm!",
-  "Chính xác!",
-  "Đúng rồi, giỏi quá!",
-];
-
-const WRONG_PHRASES = [
-  "Sai rồi!",
-  "Thử lại nhé!",
-  "Chưa đúng, cố gắng lên!",
-  "Sai một chút thôi!",
-];
-
-/** Số lần đọc lại từ vựng sau mỗi câu trả lời */
-export const WORD_REPEAT_TIMES = 3;
-
-function pickPhrase(phrases: string[]): string {
-  return phrases[Math.floor(Math.random() * phrases.length)];
-}
-
-/**
- * Phản hồi sau khi trả lời: khen/nhắc bằng tiếng Việt rồi đọc to từ vựng
- * tiếng Anh nhiều lần — áp dụng cho cả câu đúng và câu sai.
- *
- * `onDone` được gọi khi đã đọc xong toàn bộ, dùng để mở nút "Tiếp theo".
- */
-export function speakFeedback(
-  isCorrect: boolean,
-  word: string,
-  opts: { repeat?: number; onDone?: () => void } = {}
-) {
-  const { repeat = WORD_REPEAT_TIMES, onDone } = opts;
-  const intro = pickPhrase(isCorrect ? CORRECT_PHRASES : WRONG_PHRASES);
-  speakSequence(
-    [
-      { text: intro, lang: "vi-VN", rate: 1 },
-      ...Array.from({ length: repeat }, () => ({
-        text: word,
-        lang: "en-US",
-        rate: 0.9,
-      })),
-    ],
-    { onDone }
-  );
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 0.9;
+  const voice = findVoice(lang);
+  if (voice) utterance.voice = voice;
+  window.speechSynthesis.speak(utterance);
 }
