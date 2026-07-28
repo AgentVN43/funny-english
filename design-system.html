@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design System — Funny English</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   BẢNG TRA DESIGN SYSTEM — file tĩnh, mở bằng file:// từ ổ đĩa.
+   Không phải route, không nằm trong public/, nên không ai ngoài
+   xem được. Trước đây đây là route /design-system nên bị lộ.
+
+   Khối CSS dưới đây CHÉP từ src/app/globals.css. Nguồn sự thật
+   vẫn là globals.css — sửa token ở đó rồi chép sang đây cho khớp,
+   quên là bảng này bắt đầu nói dối.
+   ============================================================ */
+
+/* ===== Chép từ @theme của globals.css ===== */
+:root {
+/* --- Chữ & nền (60%) --- */
+  --color-ink: #24243e;
+  --color-ink-soft: #6b6e8f;
+  --color-ink-faint: #9ca0bf;
+  --color-cloud: #f4f7fe;
+  --color-cloud-deep: #e8edfb;
+
+  /* --- Màu chủ đạo (30%) --- */
+  --color-grape: #7c4dff;
+  --color-grape-dark: #5b2fd6;
+  --color-grape-soft: #efe8ff;
+
+  --color-sky: #22b8f0;
+  --color-sky-dark: #0e93c7;
+  --color-sky-soft: #e0f5fe;
+
+  /* --- Màu nhấn & ngữ nghĩa (10%) --- */
+  --color-sun: #ffc93c;
+  --color-sun-dark: #dda600;
+  --color-sun-soft: #fff6dd;
+
+  --color-leaf: #35c759;
+  --color-leaf-dark: #24a344;
+  --color-leaf-soft: #e2f9e8;
+
+  --color-cherry: #ff4757;
+  --color-cherry-dark: #d92d3c;
+  --color-cherry-soft: #ffe8ea;
+
+  /* --- Bo góc: trẻ em thì càng tròn càng thân thiện --- */
+  --radius-blob: 14px;
+  --radius-card: 20px;
+  --radius-pill: 28px;
+  --radius-jumbo: 36px;
+
+  /* --- Font --- */
+  --font-display: var(--font-baloo), system-ui, sans-serif;
+  --font-body: var(--font-nunito), system-ui, sans-serif;
+
+  /* --- Chuyển động --- */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --font-baloo: "Baloo 2";
+  --font-nunito: "Nunito";
+}
+
+/* ===== @layer base, nguyên văn ===== */
+:root {
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+    /* Chiều cao bóng đặc của nút 3D — bấm xuống thì lùi đúng khoảng này */
+    --push: 4px;
+  }
+
+  html,
+  body {
+    max-width: 100vw;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background: var(--color-cloud);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+
+  /* Viền focus rõ ràng — bàn phím và trình đọc màn hình đều cần */
+  :focus-visible {
+    outline: 3px solid var(--color-grape);
+    outline-offset: 2px;
+  }
+
+  /* Tôn trọng người dùng tắt hiệu ứng chuyển động */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+/* ===== @layer components, nguyên văn ===== */
+/* ----------------------------------------------------------
+     Nút 3D bấm được — bóng đặc ở đáy, bấm xuống thì bóng mất.
+     Màu bóng lấy từ biến --push-shade do từng biến thể đặt.
+     ---------------------------------------------------------- */
+  .btn-push {
+    position: relative;
+    box-shadow: 0 var(--push) 0 var(--push-shade);
+    transition:
+      transform 80ms ease-out,
+      box-shadow 80ms ease-out,
+      filter 120ms ease-out;
+  }
+
+  .btn-push:active:not(:disabled) {
+    transform: translateY(var(--push));
+    box-shadow: 0 0 0 var(--push-shade);
+  }
+
+  .btn-push:disabled {
+    filter: saturate(0.4) opacity(0.6);
+    box-shadow: 0 var(--push) 0 var(--push-shade);
+  }
+
+  /* Nền hoạ tiết dấu chấm mờ — tạo cảm giác vui mắt mà không ồn */
+  .dotted-bg {
+    background-image: radial-gradient(
+      var(--color-cloud-deep) 1.5px,
+      transparent 1.5px
+    );
+    background-size: 22px 22px;
+  }
+
+/* ===== Hiệu ứng, nguyên văn ===== */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Rung ngang khi trả lời sai */
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(7px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+/* Nảy lên khi trả lời đúng */
+@keyframes bounce-in {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.14);
+  }
+  70% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.anim-slide-in {
+  animation: slide-in 0.28s var(--ease-pop);
+}
+.anim-pop-in {
+  animation: pop-in 0.3s var(--ease-pop);
+}
+.anim-shake {
+  animation: shake 0.45s ease-in-out;
+}
+.anim-bounce {
+  animation: bounce-in 0.45s var(--ease-pop);
+}
+.anim-float {
+  animation: float-soft 3s ease-in-out infinite;
+}
+
+/* ===== Utility viết tay: Tailwind không chạy ở file tĩnh, nhưng mọi
+   khai báo đều trỏ về var() nên không có giá trị nào bị nhân bản ===== */
+.bg-ink{background-color:var(--color-ink)}
+.text-ink{color:var(--color-ink)}
+.border-ink{border-color:var(--color-ink)}
+.bg-ink-soft{background-color:var(--color-ink-soft)}
+.text-ink-soft{color:var(--color-ink-soft)}
+.border-ink-soft{border-color:var(--color-ink-soft)}
+.bg-ink-faint{background-color:var(--color-ink-faint)}
+.text-ink-faint{color:var(--color-ink-faint)}
+.border-ink-faint{border-color:var(--color-ink-faint)}
+.bg-cloud{background-color:var(--color-cloud)}
+.text-cloud{color:var(--color-cloud)}
+.border-cloud{border-color:var(--color-cloud)}
+.bg-cloud-deep{background-color:var(--color-cloud-deep)}
+.text-cloud-deep{color:var(--color-cloud-deep)}
+.border-cloud-deep{border-color:var(--color-cloud-deep)}
+.bg-grape{background-color:var(--color-grape)}
+.text-grape{color:var(--color-grape)}
+.border-grape{border-color:var(--color-grape)}
+.bg-grape-dark{background-color:var(--color-grape-dark)}
+.text-grape-dark{color:var(--color-grape-dark)}
+.border-grape-dark{border-color:var(--color-grape-dark)}
+.bg-grape-soft{background-color:var(--color-grape-soft)}
+.text-grape-soft{color:var(--color-grape-soft)}
+.border-grape-soft{border-color:var(--color-grape-soft)}
+.bg-sky{background-color:var(--color-sky)}
+.text-sky{color:var(--color-sky)}
+.border-sky{border-color:var(--color-sky)}
+.bg-sky-dark{background-color:var(--color-sky-dark)}
+.text-sky-dark{color:var(--color-sky-dark)}
+.border-sky-dark{border-color:var(--color-sky-dark)}
+.bg-sky-soft{background-color:var(--color-sky-soft)}
+.text-sky-soft{color:var(--color-sky-soft)}
+.border-sky-soft{border-color:var(--color-sky-soft)}
+.bg-sun{background-color:var(--color-sun)}
+.text-sun{color:var(--color-sun)}
+.border-sun{border-color:var(--color-sun)}
+.bg-sun-dark{background-color:var(--color-sun-dark)}
+.text-sun-dark{color:var(--color-sun-dark)}
+.border-sun-dark{border-color:var(--color-sun-dark)}
+.bg-sun-soft{background-color:var(--color-sun-soft)}
+.text-sun-soft{color:var(--color-sun-soft)}
+.border-sun-soft{border-color:var(--color-sun-soft)}
+.bg-leaf{background-color:var(--color-leaf)}
+.text-leaf{color:var(--color-leaf)}
+.border-leaf{border-color:var(--color-leaf)}
+.bg-leaf-dark{background-color:var(--color-leaf-dark)}
+.text-leaf-dark{color:var(--color-leaf-dark)}
+.border-leaf-dark{border-color:var(--color-leaf-dark)}
+.bg-leaf-soft{background-color:var(--color-leaf-soft)}
+.text-leaf-soft{color:var(--color-leaf-soft)}
+.border-leaf-soft{border-color:var(--color-leaf-soft)}
+.bg-cherry{background-color:var(--color-cherry)}
+.text-cherry{color:var(--color-cherry)}
+.border-cherry{border-color:var(--color-cherry)}
+.bg-cherry-dark{background-color:var(--color-cherry-dark)}
+.text-cherry-dark{color:var(--color-cherry-dark)}
+.border-cherry-dark{border-color:var(--color-cherry-dark)}
+.bg-cherry-soft{background-color:var(--color-cherry-soft)}
+.text-cherry-soft{color:var(--color-cherry-soft)}
+.border-cherry-soft{border-color:var(--color-cherry-soft)}
+.rounded-blob{border-radius:var(--radius-blob)}
+.rounded-card{border-radius:var(--radius-card)}
+.rounded-pill{border-radius:var(--radius-pill)}
+.rounded-jumbo{border-radius:var(--radius-jumbo)}
+
+/* ===== Khung của riêng trang xem — KHÔNG phải token của hệ thống ===== */
+* { box-sizing: border-box; }
+body { margin: 0; padding-bottom: 80px; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+header.top { border-bottom: 2px solid var(--color-cloud-deep); background: #fff; padding: 32px 0; }
+header.top .eyebrow { font-family: var(--font-display); font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--color-grape); margin: 0; }
+header.top h1 { font-size: 34px; margin: 4px 0 8px; }
+header.top p { margin: 0; max-width: 640px; font-weight: 700; color: var(--color-ink-soft); }
+.stamp { margin-top: 14px; font-size: 12px; font-weight: 700; color: var(--color-ink-faint); }
+.section { margin-top: 44px; }
+.section h2 { font-size: 24px; margin: 0; }
+.section-desc { margin: 4px 0 14px; font-weight: 700; color: var(--color-ink-soft); }
+.panel { background: #fff; border: 2px solid var(--color-cloud-deep); border-radius: var(--radius-card); padding: 22px; }
+.group { margin-bottom: 28px; }
+.group:last-child { margin-bottom: 0; }
+.group h3 { font-size: 17px; margin: 0; }
+.group p { margin: 2px 0 12px; font-size: 14px; color: var(--color-ink-soft); }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.swatch { height: 64px; border: 2px solid; }
+.swatch-name { margin: 6px 0 0; font-size: 13px; font-weight: 800; }
+.swatch-value { margin: 0; font-size: 12px; font-family: ui-monospace, monospace; color: var(--color-ink-soft); }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.stack { display: grid; gap: 12px; }
+.label { font-size: 12px; font-weight: 800; color: var(--color-ink-soft); margin: 0 0 6px; }
+.radius-box { height: 90px; border: 2px solid var(--color-cloud-deep); background: var(--color-grape-soft); display: grid; place-items: center; font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: var(--color-grape); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; font-family: var(--font-display); font-weight: 800; border-radius: var(--radius-pill); min-height: 56px; padding: 0 24px; font-size: 18px; color: #fff; }
+.btn.md { min-height: 48px; padding: 0 20px; font-size: 16px; }
+.btn.sun, .btn.plain { color: var(--color-ink); }
+.option { display: flex; width: 100%; align-items: center; gap: 12px; border: 2px solid; border-radius: var(--radius-pill); padding: 12px 16px 12px 12px; min-height: 64px; text-align: left; background: #fff; cursor: pointer; font-family: inherit; }
+.option .badge { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; font-family: var(--font-display); font-size: 18px; font-weight: 800; }
+.option .text { flex: 1; font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+.bar { height: 16px; width: 100%; overflow: hidden; border-radius: 999px; background: var(--color-cloud-deep); }
+.bar > span { display: block; height: 100%; border-radius: 999px; }
+.tile { border-radius: var(--radius-card); padding: 12px; text-align: center; }
+.tile .v { font-family: var(--font-display); font-size: 22px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile .l { margin-top: 2px; font-size: 12px; font-weight: 700; opacity: .8; }
+.card-demo { border: 2px solid var(--color-cloud-deep); border-radius: var(--radius-card); background: #fff; padding: 16px; }
+.skel { border-radius: var(--radius-blob); background: var(--color-cloud-deep); height: 16px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45 } }
+.empty { display: grid; justify-items: center; gap: 10px; padding: 40px 0; text-align: center; }
+.empty .art { font-size: 58px; }
+.anim-demo { display: grid; place-items: center; gap: 8px; }
+.anim-demo .box { width: 84px; height: 84px; display: grid; place-items: center; border-radius: var(--radius-blob); background: var(--color-grape); color: #fff; font-family: var(--font-display); font-weight: 800; cursor: pointer; user-select: none; }
+.hint { font-size: 13px; font-weight: 700; color: var(--color-ink-faint); }
+.note { margin-top: 10px; font-size: 13px; color: var(--color-ink-soft); }
+</style>
+</head>
+<body>
+
+<header class="top dotted-bg">
+  <div class="wrap">
+    <p class="eyebrow">Funny English</p>
+    <h1>Design System</h1>
+    <p>Bảng tra token và component. Phần CSS bên dưới chép từ <code>src/app/globals.css</code> — <strong>sửa token trong CSS thì nhớ sửa tay file này cho khớp</strong>, nếu không bảng sẽ nói sai.</p>
+    <p class="stamp">File tĩnh, không phải route, không nằm trong <code>public/</code> — người dùng không truy cập được. Mở trực tiếp từ ổ đĩa.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+
+    <section class="section">
+      <h2>Màu sắc</h2>
+      <p class="section-desc">Theo tỉ lệ 60-30-10: phần lớn là nền trung tính sáng, một màu chủ đạo, và màu nhấn dùng dè.</p>
+      <div class="panel">
+      <div class="group">
+        <h3>Chữ và nền — 60%</h3>
+        <p>Chiếm phần lớn diện tích. Chữ dùng navy sâu thay vì đen thuần cho bớt gắt mắt.</p>
+        <div class="grid">
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-ink)"></div>
+        <p class="swatch-name">ink</p>
+        <p class="swatch-value">#24243e</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-ink-soft)"></div>
+        <p class="swatch-name">ink-soft</p>
+        <p class="swatch-value">#6b6e8f</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-ink-faint)"></div>
+        <p class="swatch-name">ink-faint</p>
+        <p class="swatch-value">#9ca0bf</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-cloud)"></div>
+        <p class="swatch-name">cloud</p>
+        <p class="swatch-value">#f4f7fe</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-cloud-deep)"></div>
+        <p class="swatch-name">cloud-deep</p>
+        <p class="swatch-value">#e8edfb</p>
+      </div></div>
+      </div>
+      <div class="group">
+        <h3>Màu chủ đạo — 30%</h3>
+        <p>Nhận diện thương hiệu và hành động chính. Biến thể -dark làm bóng nút 3D, -soft làm nền nhạt.</p>
+        <div class="grid">
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-grape)"></div>
+        <p class="swatch-name">grape</p>
+        <p class="swatch-value">#7c4dff</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-grape-dark)"></div>
+        <p class="swatch-name">grape-dark</p>
+        <p class="swatch-value">#5b2fd6</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-grape-soft)"></div>
+        <p class="swatch-name">grape-soft</p>
+        <p class="swatch-value">#efe8ff</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sky)"></div>
+        <p class="swatch-name">sky</p>
+        <p class="swatch-value">#22b8f0</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sky-dark)"></div>
+        <p class="swatch-name">sky-dark</p>
+        <p class="swatch-value">#0e93c7</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sky-soft)"></div>
+        <p class="swatch-name">sky-soft</p>
+        <p class="swatch-value">#e0f5fe</p>
+      </div></div>
+      </div>
+      <div class="group">
+        <h3>Màu nhấn và ngữ nghĩa — 10%</h3>
+        <p>Mỗi màu mang một nghĩa cố định, không dùng lẫn: xanh lá = đúng, đỏ = sai, vàng = thưởng.</p>
+        <div class="grid">
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-leaf)"></div>
+        <p class="swatch-name">leaf</p>
+        <p class="swatch-value">#35c759</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-leaf-dark)"></div>
+        <p class="swatch-name">leaf-dark</p>
+        <p class="swatch-value">#24a344</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-leaf-soft)"></div>
+        <p class="swatch-name">leaf-soft</p>
+        <p class="swatch-value">#e2f9e8</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-cherry)"></div>
+        <p class="swatch-name">cherry</p>
+        <p class="swatch-value">#ff4757</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-cherry-dark)"></div>
+        <p class="swatch-name">cherry-dark</p>
+        <p class="swatch-value">#d92d3c</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-cherry-soft)"></div>
+        <p class="swatch-name">cherry-soft</p>
+        <p class="swatch-value">#ffe8ea</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sun)"></div>
+        <p class="swatch-name">sun</p>
+        <p class="swatch-value">#ffc93c</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sun-dark)"></div>
+        <p class="swatch-name">sun-dark</p>
+        <p class="swatch-value">#dda600</p>
+      </div>
+      <div>
+        <div class="swatch border-cloud-deep rounded-blob" style="background:var(--color-sun-soft)"></div>
+        <p class="swatch-name">sun-soft</p>
+        <p class="swatch-value">#fff6dd</p>
+      </div></div>
+      </div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Bo góc</h2>
+      <p class="section-desc">Bốn cấp, chọn theo kích thước khối. Trẻ em thì càng tròn càng thân thiện.</p>
+      <div class="panel"><div class="grid">
+      <div>
+        <div class="radius-box" style="border-radius:var(--radius-blob)">14px</div>
+        <p class="swatch-name">rounded-blob</p>
+        <p class="swatch-value">Ô vuông nhỏ, khối icon</p>
+      </div>
+      <div>
+        <div class="radius-box" style="border-radius:var(--radius-card)">20px</div>
+        <p class="swatch-name">rounded-card</p>
+        <p class="swatch-value">Thẻ nội dung</p>
+      </div>
+      <div>
+        <div class="radius-box" style="border-radius:var(--radius-pill)">28px</div>
+        <p class="swatch-name">rounded-pill</p>
+        <p class="swatch-value">Nút bấm, ô nhập, đáp án</p>
+      </div>
+      <div>
+        <div class="radius-box" style="border-radius:var(--radius-jumbo)">36px</div>
+        <p class="swatch-name">rounded-jumbo</p>
+        <p class="swatch-value">Khối lớn như banner chào</p>
+      </div></div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Chữ</h2>
+      <p class="section-desc">Baloo 2 cho tiêu đề và nút, Nunito cho đoạn văn. Cả hai đều đủ dấu tiếng Việt.</p>
+      <div class="panel"><div class="stack">
+      <div>
+        <p class="label">font-display — Baloo 2</p>
+        <p style="font-family:var(--font-display);font-size:30px;font-weight:800;margin:0">Học tiếng Anh thật vui</p>
+      </div>
+      <div>
+        <p class="label">font-body — Nunito</p>
+        <p style="font-family:var(--font-body);font-size:16px;font-weight:700;margin:0;color:var(--color-ink-soft)">Mỗi ngày một chút, nhớ từ vựng lâu hơn nhiều.</p>
+      </div>
+      <div>
+        <p class="label">Thang chữ</p>
+        <div class="row" style="align-items:baseline">
+          <span style="font-family:var(--font-display);font-size:34px;font-weight:800">34</span>
+          <span style="font-family:var(--font-display);font-size:24px;font-weight:800">24</span>
+          <span style="font-family:var(--font-display);font-size:18px;font-weight:800">18</span>
+          <span style="font-weight:700">16</span>
+          <span style="font-size:14px;font-weight:700">14</span>
+          <span style="font-size:12px;font-weight:700">12</span>
+        </div>
+      </div>
+    </div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Nút</h2>
+      <p class="section-desc">Bóng đặc ở đáy, bấm xuống thì nút lún và bóng mất. Cảm giác sờ được này là thứ giữ trẻ bấm tiếp — bấm thử đi.</p>
+      <div class="panel"><div class="row">
+      <button class="btn btn-push bg-grape"
+        style="--push-shade:var(--color-grape-dark)"
+        title="Hành động chính">grape</button>
+      <button class="btn btn-push bg-sky"
+        style="--push-shade:var(--color-sky-dark)"
+        title="Hành động phụ">sky</button>
+      <button class="btn btn-push bg-sun"
+        style="--push-shade:var(--color-sun-dark)"
+        title="Thưởng, nổi bật">sun</button>
+      <button class="btn btn-push bg-leaf"
+        style="--push-shade:var(--color-leaf-dark)"
+        title="Xác nhận, đúng">leaf</button>
+      <button class="btn btn-push bg-cherry"
+        style="--push-shade:var(--color-cherry-dark)"
+        title="Xoá, cảnh báo">cherry</button>
+      <button class="btn btn-push "
+        style="background:#fff;--push-shade:var(--color-cloud-deep)"
+        title="Trung tính">plain</button></div>
+    <p class="note">Cỡ <code>lg</code> cao 56px (mặc định), <code>md</code> cao 48px — cả hai đều vượt ngưỡng vùng bấm 48px.</p></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Đáp án trắc nghiệm</h2>
+      <p class="section-desc">Huy hiệu chữ cái A/B/C/D vì trẻ nhỏ đọc chữ cái dễ hơn số thứ tự. Bốn trạng thái dùng đúng ngữ nghĩa màu.</p>
+      <div class="panel"><div class="stack" style="max-width:520px">
+      <button class="option btn-push" style="background:#fff;border-color:var(--color-cloud-deep);--push-shade:var(--color-cloud-deep)">
+        <span class="badge" style="background:var(--color-sun);color:var(--color-ink)">A</span>
+        <span class="text" style="color:var(--color-ink)">Chưa chọn</span>
+        <span style="font-size:20px;font-weight:800;color:var(--color-ink)"></span>
+      </button>
+      <button class="option btn-push" style="background:var(--color-leaf-soft);border-color:var(--color-leaf);--push-shade:var(--color-leaf)">
+        <span class="badge" style="background:var(--color-leaf);color:#fff">B</span>
+        <span class="text" style="color:var(--color-leaf-dark)">Đúng</span>
+        <span style="font-size:20px;font-weight:800;color:var(--color-leaf-dark)">✓</span>
+      </button>
+      <button class="option btn-push" style="background:var(--color-cherry-soft);border-color:var(--color-cherry);--push-shade:var(--color-cherry)">
+        <span class="badge" style="background:var(--color-cherry);color:#fff">C</span>
+        <span class="text" style="color:var(--color-cherry-dark)">Sai</span>
+        <span style="font-size:20px;font-weight:800;color:var(--color-cherry-dark)">✕</span>
+      </button>
+      <button class="option btn-push" style="background:#fff;border-color:var(--color-cloud-deep);opacity:.45;--push-shade:var(--color-cloud-deep)">
+        <span class="badge" style="background:var(--color-cloud-deep);color:var(--color-ink-faint)">D</span>
+        <span class="text" style="color:var(--color-ink-soft)">Bị mờ đi</span>
+        <span style="font-size:20px;font-weight:800;color:var(--color-ink-soft)"></span>
+      </button></div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Tiến độ và số liệu</h2>
+      <p class="section-desc">Thanh dày bo tròn hết cỡ, có vệt sáng ở nửa trên. Ô số liệu để số trước nhãn và to gấp đôi.</p>
+      <div class="panel"><div class="stack">
+      
+      <div class="bar"><span class="bg-leaf" style="width:35%"></span></div>
+      <div class="bar"><span class="bg-grape" style="width:55%"></span></div>
+      <div class="bar"><span class="bg-sun" style="width:75%"></span></div>
+      <div class="bar"><span class="bg-sky" style="width:95%"></span></div>
+    </div>
+    <div class="grid" style="margin-top:18px;grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
+      
+      <div class="tile bg-grape-soft text-grape">
+        <div class="v">128</div><div class="l">Từ đã học</div>
+      </div>
+      <div class="tile bg-sky-soft text-sky-dark">
+        <div class="v">12</div><div class="l">Chủ đề</div>
+      </div>
+      <div class="tile bg-sun-soft text-sun-dark">
+        <div class="v">7</div><div class="l">Ngày liên tiếp</div>
+      </div>
+      <div class="tile bg-leaf-soft text-leaf-dark">
+        <div class="v">94%</div><div class="l">Chính xác</div>
+      </div>
+    </div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Khối và trạng thái</h2>
+      <p class="section-desc">Viền đặc thay cho đổ bóng mờ giúp khối trông chắc, hợp phong cách trẻ em.</p>
+      <div class="panel"><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px">
+      <div>
+        <p class="label">Card</p>
+        <div class="card-demo">
+          <p style="font-family:var(--font-display);font-weight:800;margin:0 0 4px">Động vật</p>
+          <p style="margin:0;font-size:14px;color:var(--color-ink-soft)">24 từ vựng</p>
+        </div>
+      </div>
+      <div>
+        <p class="label">Skeleton</p>
+        <div class="card-demo stack">
+          <div class="skel" style="width:60%"></div>
+          <div class="skel"></div>
+          <div class="skel" style="width:80%"></div>
+        </div>
+      </div>
+      <div>
+        <p class="label">EmptyState</p>
+        <div class="card-demo">
+          <div class="empty">
+            <span class="art anim-float">🌱</span>
+            <p style="font-family:var(--font-display);font-size:19px;font-weight:800;margin:0">Chưa có gì ở đây</p>
+            <p style="margin:0;font-size:14px;color:var(--color-ink-soft)">Chọn một chủ đề để bắt đầu học nhé</p>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Hiệu ứng</h2>
+      <p class="section-desc">Bấm vào ô để xem lại. Toàn bộ đã bị tắt khi người dùng bật chế độ giảm chuyển động.</p>
+      <div class="panel"><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+      
+      <div class="anim-demo">
+        <div class="box anim-pop-in" data-anim="anim-pop-in">▶</div>
+        <p class="hint">pop-in</p>
+        <p class="hint" style="color:var(--color-ink-soft)">Khối mới xuất hiện</p>
+      </div>
+      <div class="anim-demo">
+        <div class="box anim-slide-in" data-anim="anim-slide-in">▶</div>
+        <p class="hint">slide-in</p>
+        <p class="hint" style="color:var(--color-ink-soft)">Thẻ tiếp theo trượt vào</p>
+      </div>
+      <div class="anim-demo">
+        <div class="box anim-shake" data-anim="anim-shake">▶</div>
+        <p class="hint">shake</p>
+        <p class="hint" style="color:var(--color-ink-soft)">Trả lời sai</p>
+      </div>
+      <div class="anim-demo">
+        <div class="box anim-bounce" data-anim="anim-bounce">▶</div>
+        <p class="hint">bounce</p>
+        <p class="hint" style="color:var(--color-ink-soft)">Trả lời đúng</p>
+      </div>
+      <div class="anim-demo">
+        <div class="box anim-float" data-anim="anim-float">▶</div>
+        <p class="hint">float</p>
+        <p class="hint" style="color:var(--color-ink-soft)">Minh hoạ trôi nhẹ</p>
+      </div>
+    </div></div>
+    </section>
+
+
+    <section class="section">
+      <h2>Nền hoạ tiết</h2>
+      <p class="section-desc">Dấu chấm mờ tạo cảm giác vui mắt mà không ồn. Dùng cho header và khối chào.</p>
+      <div class="panel"><div class="dotted-bg" style="height:120px;border:2px solid var(--color-cloud-deep);border-radius:var(--radius-jumbo)"></div></div>
+    </section>
+
+</div>
+
+<script>
+// Bấm để chạy lại animation: gỡ class rồi gắn lại sau một frame
+document.querySelectorAll("[data-anim]").forEach(function (el) {
+  el.addEventListener("click", function () {
+    var cls = el.dataset.anim;
+    el.classList.remove(cls);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { el.classList.add(cls); });
+    });
+  });
+});
+</script>
+
+</body>
+</html>
