@@ -10,7 +10,7 @@ import {
   updateTopic,
   deleteTopic,
 } from "@/lib/db";
-import type { Category, Topic } from "@/lib/types";
+import type { Category, Topic, TopicMode } from "@/lib/types";
 import {
   Button,
   Card,
@@ -28,6 +28,22 @@ import { Screen } from "@/components/ui/Layout";
 
 const { Title, Text } = Typography;
 
+const MODE_OPTIONS: { value: TopicMode; label: string; hint: string }[] = [
+  {
+    value: "word",
+    label: "Từ vựng có hình",
+    hint: "Hiện ảnh + nghĩa tiếng Việt, trẻ chọn từ tiếng Anh. Hợp với con vật, trái cây, đồ vật.",
+  },
+  {
+    value: "sentence",
+    label: "Mẫu câu giao tiếp",
+    hint: "Hiện câu tiếng Việt, trẻ chọn câu tiếng Anh tương ứng. Không dùng ảnh.",
+  },
+];
+
+const modeLabel = (mode: TopicMode) =>
+  MODE_OPTIONS.find((m) => m.value === mode)?.label ?? mode;
+
 export default function AdminTopicsPage() {
   const router = useRouter();
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -39,6 +55,8 @@ export default function AdminTopicsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
+  const [mode, setMode] = useState<TopicMode>("word");
+  const [questionPrompt, setQuestionPrompt] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function loadTopics(catId?: string) {
@@ -88,6 +106,8 @@ export default function AdminTopicsPage() {
     setName("");
     setDescription("");
     setCategoryId(filterCat);
+    setMode("word");
+    setQuestionPrompt("");
     setDrawerOpen(true);
   };
 
@@ -96,6 +116,8 @@ export default function AdminTopicsPage() {
     setName(topic.name);
     setDescription(topic.description);
     setCategoryId(topic.category_id || "");
+    setMode(topic.mode);
+    setQuestionPrompt(topic.question_prompt || "");
     setDrawerOpen(true);
   };
 
@@ -115,10 +137,15 @@ export default function AdminTopicsPage() {
           name: name.trim(),
           description: description.trim(),
           category_id: categoryId,
+          mode,
+          question_prompt: questionPrompt.trim(),
         });
         message.success("Đã cập nhật chủ đề");
       } else {
-        await createTopic(name.trim(), description.trim(), categoryId);
+        await createTopic(name.trim(), description.trim(), categoryId, {
+          mode,
+          question_prompt: questionPrompt.trim(),
+        });
         message.success("Đã tạo chủ đề mới");
       }
       setDrawerOpen(false);
@@ -199,7 +226,7 @@ export default function AdminTopicsPage() {
                   <div>
                     <Text strong className="text-base block">{topic.name}</Text>
                     <Text type="secondary" className="text-sm block">
-                      {categoryName(topic.category_id)}
+                      {categoryName(topic.category_id)} · {modeLabel(topic.mode)}
                     </Text>
                     {topic.description && (
                       <Text type="secondary" className="text-xs">{topic.description}</Text>
@@ -279,6 +306,42 @@ export default function AdminTopicsPage() {
               size="large"
               className="rounded-xl"
             />
+          </div>
+          <div>
+            <Text className="block mb-1 font-medium">Kiểu bài</Text>
+            <Select
+              value={mode}
+              onChange={(v: TopicMode) => setMode(v)}
+              size="large"
+              className="w-full rounded-xl"
+              options={MODE_OPTIONS.map((m) => ({
+                value: m.value,
+                label: m.label,
+              }))}
+            />
+            <Text type="secondary" className="text-xs block mt-1">
+              {MODE_OPTIONS.find((m) => m.value === mode)?.hint}
+            </Text>
+          </div>
+          <div>
+            <Text className="block mb-1 font-medium">
+              Câu hỏi đọc lên (không bắt buộc)
+            </Text>
+            <Input
+              value={questionPrompt}
+              onChange={(e) => setQuestionPrompt(e.target.value)}
+              placeholder={
+                mode === "word"
+                  ? "Mặc định: Tên tiếng Anh của {tu} là gì?"
+                  : "Mặc định: đọc thẳng câu tiếng Việt"
+              }
+              size="large"
+              className="rounded-xl"
+            />
+            <Text type="secondary" className="text-xs block mt-1">
+              {"{tu}"} sẽ được thay bằng nghĩa tiếng Việt của từng thẻ. Bỏ trống
+              thì dùng mẫu mặc định.
+            </Text>
           </div>
         </div>
       </Drawer>

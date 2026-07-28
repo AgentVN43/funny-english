@@ -37,6 +37,11 @@ function AdminCardsContent() {
   const [filterTopic, setFilterTopic] = useState(searchParams.get("topic_id") || "");
   const [saving, setSaving] = useState(false);
 
+  // Chủ đề mẫu câu chứa cả câu chứ không phải từ đơn: ô nhập phải rộng ra,
+  // nhãn phải đổi, và ảnh thì không dùng đến
+  const isSentence =
+    topics.find((t) => t.id === topicId)?.mode === "sentence";
+
   async function loadCards(tId?: string) {
     try {
       const data = await getCards(tId || undefined);
@@ -103,17 +108,19 @@ function AdminCardsContent() {
       return;
     }
     setSaving(true);
+    // Đổi chủ đề sang kiểu mẫu câu thì bỏ luôn ảnh cũ, đừng để lại rác ẩn
+    const imageValue = isSentence ? "" : image.trim();
     try {
       if (editing) {
         await updateCard(editing.id, {
           word: word.trim(),
           meaning_vi: meaningVi.trim(),
-          image: image.trim(),
+          image: imageValue,
           topic_id: topicId,
         });
         message.success("Đã cập nhật thẻ");
       } else {
-        await createCard(topicId, word.trim(), meaningVi.trim(), image.trim());
+        await createCard(topicId, word.trim(), meaningVi.trim(), imageValue);
         message.success("Đã tạo thẻ mới");
       }
       setDrawerOpen(false);
@@ -254,35 +261,64 @@ function AdminCardsContent() {
             />
           </div>
           <div>
-            <Text className="block mb-1 font-medium">Từ vựng (English)</Text>
-            <Input
-              value={word}
-              onChange={(e) => setWord(e.target.value)}
-              placeholder="VD: apple"
-              size="large"
-              className="rounded-xl"
-            />
+            <Text className="block mb-1 font-medium">
+              {isSentence ? "Câu tiếng Anh" : "Từ vựng (English)"}
+            </Text>
+            {isSentence ? (
+              <Input.TextArea
+                value={word}
+                onChange={(e) => setWord(e.target.value)}
+                placeholder="VD: Could you show me the way to the station?"
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                size="large"
+                className="rounded-xl"
+              />
+            ) : (
+              <Input
+                value={word}
+                onChange={(e) => setWord(e.target.value)}
+                placeholder="VD: apple"
+                size="large"
+                className="rounded-xl"
+              />
+            )}
           </div>
           <div>
-            <Text className="block mb-1 font-medium">Nghĩa (Tiếng Việt)</Text>
-            <Input
-              value={meaningVi}
-              onChange={(e) => setMeaningVi(e.target.value)}
-              placeholder="VD: quả táo"
-              size="large"
-              className="rounded-xl"
-            />
+            <Text className="block mb-1 font-medium">
+              {isSentence ? "Câu tiếng Việt" : "Nghĩa (Tiếng Việt)"}
+            </Text>
+            {isSentence ? (
+              <Input.TextArea
+                value={meaningVi}
+                onChange={(e) => setMeaningVi(e.target.value)}
+                placeholder="VD: Bạn chỉ giúp tôi đường tới nhà ga được không?"
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                size="large"
+                className="rounded-xl"
+              />
+            ) : (
+              <Input
+                value={meaningVi}
+                onChange={(e) => setMeaningVi(e.target.value)}
+                placeholder="VD: quả táo"
+                size="large"
+                className="rounded-xl"
+              />
+            )}
           </div>
-          <div>
-            <Text className="block mb-1 font-medium">Hình ảnh URL (không bắt buộc)</Text>
-            <Input
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="https://..."
-              size="large"
-              className="rounded-xl"
-            />
-          </div>
+          {/* Bài mẫu câu không hiện ảnh nên không hỏi ảnh */}
+          {!isSentence && (
+            <div>
+              <Text className="block mb-1 font-medium">Hình ảnh URL (không bắt buộc)</Text>
+              <Input
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="https://..."
+                size="large"
+                className="rounded-xl"
+              />
+            </div>
+          )}
         </div>
       </Drawer>
     </Screen>
