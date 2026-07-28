@@ -9,7 +9,7 @@ import {
   DEFAULT_PASSWORD,
 } from "@/lib/auth";
 import { message } from "antd";
-import { ArrowLeft, Lock, LogIn, Phone, UserPlus } from "lucide-react";
+import { ArrowLeft, Lock, LogIn, User, UserPlus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -25,14 +25,15 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = safeRedirect(searchParams.get("redirect"));
-  const [phone, setPhone] = useState("");
+  // Học viên đăng nhập bằng SĐT, tài khoản quản trị bằng email — chung một ô
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    const id = phone.trim();
+    const id = identifier.trim();
     if (!id || !password) {
-      message.error("Vui lòng nhập số điện thoại và mật khẩu");
+      message.error("Vui lòng nhập số điện thoại (hoặc email) và mật khẩu");
       return;
     }
     if (!id.includes("@") && !isValidPhone(id)) {
@@ -44,7 +45,7 @@ function LoginContent() {
     if (error) {
       message.error(
         error.message === "Invalid login credentials"
-          ? "Số điện thoại hoặc mật khẩu không đúng"
+          ? "Tài khoản hoặc mật khẩu không đúng"
           : error.message
       );
       setLoading(false);
@@ -75,7 +76,8 @@ function LoginContent() {
   };
 
   const handleRegister = async () => {
-    const id = phone.trim();
+    // Đăng ký chỉ bằng SĐT: tài khoản admin do người quản trị tạo sẵn
+    const id = identifier.trim();
     if (!id) {
       message.error("Vui lòng nhập số điện thoại để đăng ký");
       return;
@@ -123,21 +125,26 @@ function LoginContent() {
             </span>
             <h1 className="mt-2 text-3xl text-ink">Chào bạn nhỏ!</h1>
             <p className="mt-1 font-bold text-ink-soft">
-              Nhập số điện thoại để vào học
+              Đăng nhập để bắt đầu học
             </p>
           </div>
 
           <div className="mt-6 space-y-3">
             <label className="block">
-              <span className="sr-only">Số điện thoại</span>
+              <span className="sr-only">Số điện thoại hoặc email</span>
               <div className="flex items-center gap-3 rounded-pill border-2 border-cloud-deep bg-cloud px-4 focus-within:border-grape">
-                <Phone size={20} className="shrink-0 text-ink-faint" />
+                <User size={20} className="shrink-0 text-ink-faint" />
+                {/* Không khoá bàn phím số: ô này còn nhận email của quản trị viên */}
                 <input
-                  type="tel"
-                  inputMode="numeric"
-                  placeholder="Số điện thoại"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="Số điện thoại hoặc email"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                   className="w-full bg-transparent py-3.5 font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
                 />
               </div>
@@ -149,6 +156,7 @@ function LoginContent() {
                 <Lock size={20} className="shrink-0 text-ink-faint" />
                 <input
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Mật khẩu"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -184,7 +192,7 @@ function LoginContent() {
             </Button>
 
             <p className="pt-1 text-center text-sm text-ink-soft">
-              Tài khoản mới có mật khẩu mặc định là{" "}
+              Tài khoản mới đăng ký bằng số điện thoại, mật khẩu mặc định là{" "}
               <strong className="text-ink">{DEFAULT_PASSWORD}</strong>. Bạn đổi
               được trong phần Cài đặt.
             </p>
