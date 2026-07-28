@@ -3,6 +3,7 @@ import { DEFAULT_CARDS_PER_SESSION, MASTERY_STREAK } from "./constants";
 import type { CardProgress } from "./session";
 import type {
   Category,
+  Profile,
   Topic,
   Card,
   Progress,
@@ -354,4 +355,36 @@ export async function getProfile(userId: string) {
     .single();
   if (error) throw error;
   return data;
+}
+
+// Theo dõi học viên (chỉ admin — RLS chặn học viên thường đọc của người khác)
+
+/**
+ * Danh sách toàn bộ tài khoản. RLS chỉ trả về đủ danh sách khi người gọi là
+ * admin; học viên thường sẽ chỉ thấy chính mình.
+ */
+export async function getAllProfiles() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Profile[];
+}
+
+/**
+ * Buổi học của MỌI học viên, mới nhất trước.
+ *
+ * Lấy một lần rồi chia theo người ở phía client: rẻ hơn nhiều so với gọi
+ * riêng cho từng học viên khi dựng bảng theo dõi. `limit` là chốt chặn để
+ * trang không phình vô hạn khi dữ liệu lớn dần.
+ */
+export async function getAllStudySessions(limit = 2000) {
+  const { data, error } = await supabase
+    .from("study_sessions")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as StudySession[];
 }

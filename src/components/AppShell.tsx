@@ -18,6 +18,7 @@ import {
   FolderTree,
   LogIn,
   Sparkles,
+  Users,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 
@@ -94,6 +95,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       icon: <Settings size={22} />,
       path: "/settings",
       authOnly: true,
+    },
+    {
+      label: "Theo dõi học viên",
+      icon: <Users size={22} />,
+      path: "/admin/students",
+      adminOnly: true,
     },
     {
       label: "Quản lý Categories",
