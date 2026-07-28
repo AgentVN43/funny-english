@@ -117,23 +117,29 @@ export async function getCards(topicId?: string) {
  * Thẻ mượn từ chủ đề khác để bổ sung đáp án nhiễu khi chủ đề hiện tại có quá
  * ít thẻ để dựng đủ 4 lựa chọn.
  *
- * Ưu tiên chủ đề cùng nhóm cho sát chủ điểm. Nhưng chủ đề có thể chưa được
- * gán nhóm (`category_id` rỗng) hoặc nhóm không còn thẻ nào — khi đó vẫn phải
- * mượn từ chủ đề bất kỳ, vì thà nhiễu lệch chủ điểm còn hơn để lộ đáp án
- * đúng do chỉ hiện được 1-2 lựa chọn.
+ * Chỉ mượn từ chủ đề **cùng kiểu bài**: một từ đơn đứng cạnh ba câu giao tiếp
+ * dài thì trẻ loại được ngay mà chẳng cần hiểu nghĩa.
+ *
+ * Trong cùng kiểu bài thì ưu tiên chủ đề cùng nhóm cho sát chủ điểm. Nhưng
+ * chủ đề có thể chưa được gán nhóm (`category_id` rỗng) hoặc nhóm không còn
+ * thẻ nào — khi đó vẫn mượn từ chủ đề bất kỳ, vì thà nhiễu lệch chủ điểm còn
+ * hơn để lộ đáp án đúng do chỉ hiện được 1-2 lựa chọn.
  */
 export async function getExtraDistractorCards(topicId: string, limit = 60) {
   const { data: topic } = await supabase
     .from("topics")
-    .select("category_id")
+    .select("category_id, mode")
     .eq("id", topicId)
     .maybeSingle();
+
+  const mode: TopicMode = (topic?.mode as TopicMode) ?? "word";
 
   if (topic?.category_id) {
     const { data: siblings } = await supabase
       .from("topics")
       .select("id")
       .eq("category_id", topic.category_id)
+      .eq("mode", mode)
       .neq("id", topicId);
     const siblingIds = (siblings ?? []).map((t) => t.id);
     if (siblingIds.length > 0) {
@@ -146,10 +152,18 @@ export async function getExtraDistractorCards(topicId: string, limit = 60) {
     }
   }
 
+  const { data: sameMode } = await supabase
+    .from("topics")
+    .select("id")
+    .eq("mode", mode)
+    .neq("id", topicId);
+  const ids = (sameMode ?? []).map((t) => t.id);
+  if (ids.length === 0) return [] as Card[];
+
   const { data } = await supabase
     .from("cards")
     .select("*")
-    .neq("topic_id", topicId)
+    .in("topic_id", ids)
     .limit(limit);
   return (data ?? []) as Card[];
 }
