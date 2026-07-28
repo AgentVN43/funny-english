@@ -7,17 +7,78 @@ export function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+/**
+ * Danh sách giọng đọc lần cuối lấy được.
+ *
+ * `getVoices()` của trình duyệt trả mảng rỗng cho tới khi nạp xong giọng, và
+ * thỉnh thoảng rỗng lại giữa chừng. Giữ bản chép gần nhất để một lần rỗng
+ * không làm mất giọng đã tìm được.
+ */
+let cachedVoices: SpeechSynthesisVoice[] = [];
+/** Bản chép thuộc về đúng bộ đọc nào — đổi bộ đọc thì bản chép cũ vô nghĩa */
+let cachedFrom: SpeechSynthesis | null = null;
+
+/** Chờ giọng tối đa bấy nhiêu mili giây trước khi đọc bằng giọng đang có */
+const VOICE_WAIT_MS = 1000;
+
 function getVoices(): SpeechSynthesisVoice[] {
   if (typeof window === "undefined" || !window.speechSynthesis) return [];
-  return window.speechSynthesis.getVoices();
+  const synth = window.speechSynthesis;
+  if (synth !== cachedFrom) {
+    cachedFrom = synth;
+    cachedVoices = [];
+  }
+  const voices = synth.getVoices();
+  if (voices.length > 0) cachedVoices = voices;
+  return cachedVoices;
+}
+
+/**
+ * Chạy `run` khi trình duyệt đã có danh sách giọng.
+ *
+ * Chrome nạp giọng bất đồng bộ: mở trang xong gọi ngay `getVoices()` thường
+ * được mảng rỗng, phải đợi sự kiện `voiceschanged`. Đọc trong lúc đó thì
+ * không tìm thấy giọng tiếng Việt nào và câu hỏi bị đọc bằng giọng mặc định
+ * — tức giọng tiếng Anh đánh vần chữ Việt.
+ *
+ * Trình duyệt không có `addEventListener` trên speechSynthesis thì coi như
+ * danh sách đã sẵn sàng, chờ nữa cũng không có gì để chờ.
+ */
+function whenVoicesReady(run: () => void) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const synth = window.speechSynthesis;
+
+  if (getVoices().length > 0 || typeof synth.addEventListener !== "function") {
+    run();
+    return;
+  }
+
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    synth.removeEventListener?.("voiceschanged", start);
+    run();
+  };
+
+  synth.addEventListener("voiceschanged", start);
+  // Có máy không bắn voiceschanged bao giờ — chờ tối đa 1 giây rồi đọc đại
+  setTimeout(start, VOICE_WAIT_MS);
 }
 
 /** Ưu tiên giọng nữ cho hợp nội dung trẻ em, không có thì lấy giọng đầu tiên đúng ngôn ngữ */
 function findVoice(lang: string): SpeechSynthesisVoice | undefined {
   const langPrefix = lang.split("-")[0];
-  const candidates = getVoices().filter(
-    (v) => v.lang === lang || v.lang.startsWith(langPrefix)
-  );
+  const voices = getVoices();
+  // Khớp đúng mã vùng trước (vi-VN), sau mới tới cùng ngôn ngữ khác vùng
+  const candidates = [
+    ...voices.filter((v) => v.lang.replace("_", "-") === lang),
+    ...voices.filter(
+      (v) =>
+        v.lang.replace("_", "-") !== lang &&
+        v.lang.toLowerCase().startsWith(langPrefix.toLowerCase())
+    ),
+  ];
   const femaleHints = [
     "female",
     "zira",
@@ -26,11 +87,17 @@ function findVoice(lang: string): SpeechSynthesisVoice | undefined {
     "moira",
     "tessa",
     "google",
+    "hoaimy", // giọng nữ tiếng Việt của Windows
   ];
   const femaleMatch = candidates.find((v) =>
     femaleHints.some((h) => v.name.toLowerCase().includes(h))
   );
   return femaleMatch || candidates[0];
+}
+
+/** Máy này có giọng đọc cho ngôn ngữ đó không */
+export function hasVoiceFor(lang: string): boolean {
+  return findVoice(lang) !== undefined;
 }
 
 /**
@@ -50,11 +117,15 @@ export function cancelSpeech() {
   window.speechSynthesis.cancel();
 }
 
-function makeUtterance(text: string, lang: string, rate: number) {
+function makeUtterance(
+  text: string,
+  lang: string,
+  rate: number,
+  voice?: SpeechSynthesisVoice
+) {
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = lang;
   utterance.rate = rate;
-  const voice = findVoice(lang);
   if (voice) utterance.voice = voice;
   return utterance;
 }
@@ -81,25 +152,36 @@ export function speakTimes(
   cancelSpeech();
   const generation = speechGeneration;
 
-  let remaining = times;
-  const speakOnce = () => {
-    // Lượt đọc đã bị huỷ hoặc bị lượt mới thay thế
+  whenVoicesReady(() => {
+    // Lượt đọc đã bị huỷ hoặc bị lượt mới thay thế trong lúc chờ giọng
     if (generation !== speechGeneration) return;
 
-    remaining--;
-    const utterance = makeUtterance(text, lang, rate);
-    if (remaining > 0) {
-      const next = () => {
-        if (generation !== speechGeneration) return;
-        setTimeout(speakOnce, gapMs);
-      };
-      utterance.onend = next;
-      utterance.onerror = next;
-    }
-    window.speechSynthesis.speak(utterance);
-  };
+    const voice = findVoice(lang);
+    // Máy có giọng nhưng không có giọng nào cho ngôn ngữ này thì thôi không
+    // đọc. Không đặt `voice` là trình duyệt lấy giọng mặc định — thường là
+    // tiếng Anh — rồi đánh vần chữ tiếng Việt thành một thứ tiếng không ai
+    // hiểu. Chữ vẫn hiện đủ trên màn hình nên im lặng còn hơn.
+    if (!voice && getVoices().length > 0) return;
 
-  speakOnce();
+    let remaining = times;
+    const speakOnce = () => {
+      if (generation !== speechGeneration) return;
+
+      remaining--;
+      const utterance = makeUtterance(text, lang, rate, voice);
+      if (remaining > 0) {
+        const next = () => {
+          if (generation !== speechGeneration) return;
+          setTimeout(speakOnce, gapMs);
+        };
+        utterance.onend = next;
+        utterance.onerror = next;
+      }
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakOnce();
+  });
 }
 
 /** Đọc to một đoạn đúng một lần */

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelSpeech, shuffleArray, speakText, speakTimes } from "./utils";
+import {
+  cancelSpeech,
+  hasVoiceFor,
+  shuffleArray,
+  speakText,
+  speakTimes,
+} from "./utils";
 
 class FakeUtterance {
   lang = "";
@@ -10,6 +16,10 @@ class FakeUtterance {
   constructor(public text: string) {}
 }
 
+/**
+ * Bộ đọc đã nạp xong giọng: không có `addEventListener` nên code coi danh
+ * sách là sẵn sàng và đọc ngay.
+ */
 class FakeSpeechSynthesis {
   spoken: FakeUtterance[] = [];
   cancelCount = 0;
@@ -25,6 +35,25 @@ class FakeSpeechSynthesis {
 
   speak(u: FakeUtterance) {
     this.spoken.push(u);
+  }
+}
+
+/** Bộ đọc nạp giọng chậm, giống Chrome: có sự kiện voiceschanged */
+class FakeLazySpeechSynthesis extends FakeSpeechSynthesis {
+  private listeners: (() => void)[] = [];
+
+  addEventListener(_type: string, fn: () => void) {
+    this.listeners.push(fn);
+  }
+
+  removeEventListener(_type: string, fn: () => void) {
+    this.listeners = this.listeners.filter((l) => l !== fn);
+  }
+
+  /** Trình duyệt nạp xong giọng */
+  loadVoices(voices: { name: string; lang: string }[]) {
+    this.voices = voices;
+    for (const fn of [...this.listeners]) fn();
   }
 }
 
@@ -196,6 +225,100 @@ describe("speakTimes", () => {
     speakTimes("apple", { times: 0 });
     vi.runAllTimers();
     expect(synth.spoken).toHaveLength(0);
+  });
+});
+
+describe("chọn giọng theo ngôn ngữ", () => {
+  const VI = { name: "Microsoft HoaiMy - Vietnamese", lang: "vi-VN" };
+  const EN = { name: "Microsoft Zira", lang: "en-US" };
+
+  it("đọc tiếng Việt bằng giọng tiếng Việt, không phải giọng mặc định", () => {
+    synth.voices = [EN, VI];
+    speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+    expect((synth.spoken[0].voice as { name: string }).name).toBe(VI.name);
+  });
+
+  it("máy không có giọng tiếng Việt thì im, không đọc bằng giọng tiếng Anh", () => {
+    // Trước đây không tìm thấy giọng là để trình duyệt tự chọn, và nó lấy
+    // giọng mặc định đánh vần chữ Việt — nghe ra một thứ tiếng lạ
+    synth.voices = [EN];
+    speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it("vẫn đọc tiếng Anh bình thường trên máy đó", () => {
+    synth.voices = [EN];
+    speakText("dog");
+    expect(synth.spoken).toHaveLength(1);
+  });
+
+  it("chưa biết máy có giọng gì thì cứ đọc, còn hơn im vô cớ", () => {
+    synth.voices = [];
+    speakText("xin chào", "vi-VN");
+    expect(synth.spoken).toHaveLength(1);
+  });
+
+  it("giọng đúng mã vùng được ưu tiên hơn giọng cùng ngôn ngữ khác vùng", () => {
+    const enGb = { name: "Microsoft Hazel", lang: "en-GB" };
+    synth.voices = [enGb, EN];
+    speakText("dog", "en-US");
+    expect((synth.spoken[0].voice as { name: string }).name).toBe(EN.name);
+  });
+
+  it("hasVoiceFor cho biết máy có đọc được ngôn ngữ đó không", () => {
+    synth.voices = [EN];
+    expect(hasVoiceFor("en-US")).toBe(true);
+    expect(hasVoiceFor("vi-VN")).toBe(false);
+  });
+});
+
+describe("chờ trình duyệt nạp giọng", () => {
+  let lazy: FakeLazySpeechSynthesis;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    lazy = new FakeLazySpeechSynthesis();
+    vi.stubGlobal("window", { speechSynthesis: lazy });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("chưa có giọng nào thì chờ, không đọc vội bằng giọng mặc định", () => {
+    speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+    expect(lazy.spoken).toHaveLength(0);
+  });
+
+  it("nạp giọng xong mới đọc, và đọc đúng giọng tiếng Việt", () => {
+    speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+    lazy.loadVoices([
+      { name: "Microsoft Zira", lang: "en-US" },
+      { name: "Microsoft HoaiMy - Vietnamese", lang: "vi-VN" },
+    ]);
+    expect(lazy.spoken).toHaveLength(1);
+    expect((lazy.spoken[0].voice as { name: string }).name).toBe(
+      "Microsoft HoaiMy - Vietnamese"
+    );
+  });
+
+  it("máy không bao giờ báo nạp xong thì sau một giây vẫn đọc", () => {
+    speakText("dog");
+    vi.advanceTimersByTime(1000);
+    expect(lazy.spoken).toHaveLength(1);
+  });
+
+  it("chuyển thẻ trong lúc chờ thì bỏ luôn lượt đọc cũ", () => {
+    speakText("câu hỏi cũ", "vi-VN");
+    cancelSpeech();
+    lazy.loadVoices([{ name: "Google Tiếng Việt", lang: "vi-VN" }]);
+    expect(lazy.spoken).toHaveLength(0);
+  });
+
+  it("nạp xong rồi thì lượt sau đọc ngay, không chờ nữa", () => {
+    lazy.loadVoices([{ name: "Google Tiếng Việt", lang: "vi-VN" }]);
+    speakText("xin chào", "vi-VN");
+    expect(lazy.spoken).toHaveLength(1);
   });
 });
 
