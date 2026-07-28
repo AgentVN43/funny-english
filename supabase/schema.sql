@@ -21,17 +21,25 @@ CREATE TABLE categories (
 );
 
 -- Topics (chủ đề: "40 câu thông dụng lớp 1"... thuộc 1 category)
+--   mode = 'word'     → từ vựng có hình, hỏi "tên tiếng Anh của … là gì"
+--   mode = 'sentence' → mẫu câu giao tiếp, hiện câu tiếng Việt chọn câu tiếng Anh
+--   question_prompt   → câu hỏi đọc lên, {tu} thay bằng nghĩa tiếng Việt của thẻ;
+--                       để trống thì dùng mẫu mặc định theo mode
 CREATE TABLE topics (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   image TEXT DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'word' CHECK (mode IN ('word', 'sentence')),
+  question_prompt TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Cards (từ vựng, thuộc 1 topic)
+-- Cards (thẻ học, thuộc 1 topic)
+--   Chủ đề 'word'     → word là từ tiếng Anh, meaning_vi là nghĩa, image có ảnh
+--   Chủ đề 'sentence' → word là câu tiếng Anh, meaning_vi là câu tiếng Việt
 CREATE TABLE cards (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,

@@ -16,6 +16,16 @@ export interface Category {
   updated_at: string;
 }
 
+/**
+ * Kiểu bài của một chủ đề.
+ *
+ * `word` — từ vựng có hình: hiện ảnh + nghĩa tiếng Việt, chọn từ tiếng Anh.
+ * `sentence` — mẫu câu giao tiếp: hiện câu tiếng Việt, chọn câu tiếng Anh.
+ *   Câu giao tiếp không hỏi được kiểu "tên tiếng Anh của … là gì" nên cần bố
+ *   cục và câu hỏi riêng.
+ */
+export type TopicMode = "word" | "sentence";
+
 /** Chủ đề: "40 câu thông dụng lớp 1"... thuộc 1 category */
 export interface Topic {
   id: string;
@@ -23,10 +33,17 @@ export interface Topic {
   name: string;
   description: string;
   image: string;
+  mode: TopicMode;
+  /** Câu hỏi đọc lên, {tu} thay bằng nghĩa tiếng Việt. Trống = mẫu mặc định */
+  question_prompt: string;
   created_at: string;
   updated_at: string;
 }
 
+/**
+ * Một thẻ học. Chủ đề `sentence` dùng chung bảng này: `word` chứa câu tiếng
+ * Anh, `meaning_vi` chứa câu tiếng Việt, `image` bỏ trống.
+ */
 export interface Card {
   id: string;
   topic_id: string;

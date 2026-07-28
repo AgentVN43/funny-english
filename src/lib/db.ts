@@ -5,6 +5,7 @@ import type {
   Category,
   Profile,
   Topic,
+  TopicMode,
   Card,
   Progress,
   StudySession,
@@ -69,11 +70,18 @@ export async function getTopicById(id: string) {
 export async function createTopic(
   name: string,
   description: string,
-  category_id: string | null
+  category_id: string | null,
+  options: { mode?: TopicMode; question_prompt?: string } = {}
 ) {
   const { data, error } = await supabase
     .from("topics")
-    .insert({ name, description, category_id })
+    .insert({
+      name,
+      description,
+      category_id,
+      mode: options.mode ?? "word",
+      question_prompt: options.question_prompt ?? "",
+    })
     .select()
     .single();
   if (error) throw error;
