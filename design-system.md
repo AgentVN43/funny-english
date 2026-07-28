@@ -143,7 +143,12 @@ Khối trắng bo tròn viền dày. `TappableCard` đã gắn sẵn `role="butt
 
 Một lựa chọn đáp án: huy hiệu chữ cái A/B/C/D + chữ đậm. Trẻ nhỏ đọc chữ cái dễ hơn số thứ tự.
 
-Props: `index`, `text`, `state` (`idle` · `correct` · `wrong` · `dimmed`), `disabled`, `onClick`.
+Props: `index`, `text`, `state` (`idle` · `correct` · `wrong` · `dimmed`), `size`, `disabled`, `onClick`.
+
+| `size` | Dùng cho |
+|---|---|
+| `pill` (mặc định) | Đáp án ngắn — một từ tiếng Anh |
+| `block` | Đáp án là câu dài — bo góc vuông hơn, cao hơn, chữ nhỏ hơn, huy hiệu căn lên đỉnh |
 
 Màu và icon của từng `state` đã khớp ngữ nghĩa màu ở trên — không override bằng className.
 

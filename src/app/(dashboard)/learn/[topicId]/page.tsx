@@ -16,20 +16,21 @@ import {
 import type { Card as CardType, Topic } from "@/lib/types";
 import type { CardProgress, ProgressMap } from "@/lib/session";
 import { buildOptions, selectSessionCards } from "@/lib/session";
-import { buildQuestionText, QUESTION_HEADING } from "@/lib/question";
+import { buildQuestionText } from "@/lib/question";
 import { PendingSaveQueue } from "@/lib/pendingSaves";
 import {
   ANSWER_SPEAK_TIMES,
   DEFAULT_CARDS_PER_SESSION,
   OPTION_COUNT,
 } from "@/lib/constants";
-import { ArrowLeft, CloudOff, RotateCcw, Volume2 } from "lucide-react";
+import { ArrowLeft, CloudOff, RotateCcw } from "lucide-react";
 import { cancelSpeech, speakText, speakTimes } from "@/lib/utils";
 import { Screen, Loader, EmptyState } from "@/components/ui/Layout";
 import Button from "@/components/ui/Button";
 import IconButton from "@/components/ui/IconButton";
 import Card from "@/components/ui/Card";
 import ProgressBar from "@/components/ui/ProgressBar";
+import QuestionPanel from "@/components/QuestionPanel";
 import OptionButton, {
   OPTION_LETTERS,
   type OptionState,
@@ -498,57 +499,36 @@ export default function LearnPage() {
           />
         )}
 
-        {/* Nội dung: đề bài trên, đáp án dưới (desktop thì hai cột) */}
-        <div className="mt-4 lg:flex lg:items-start lg:gap-6">
-          <Card
+        {/*
+          Đề bài trên, đáp án dưới. Từ vựng tách hai cột trên máy tính cho ảnh
+          và đáp án cùng tầm mắt; mẫu câu giữ một cột vì câu dài đọc theo chiều
+          dọc dễ hơn.
+        */}
+        <div
+          className={`mt-4 ${
+            mode === "sentence"
+              ? "mx-auto max-w-2xl"
+              : "lg:flex lg:items-start lg:gap-6"
+          }`}
+        >
+          <QuestionPanel
             key={currentCard.id}
-            className={`anim-slide-in p-5 text-center lg:flex-1 ${
+            card={currentCard}
+            mode={mode}
+            showResult={showResult}
+            onSpeakQuestion={speakQuestion}
+            onSpeakAnswer={() => speakAnswer(currentCard.word)}
+            className={`${mode === "sentence" ? "" : "lg:flex-1"} ${
               showResult ? (isCorrect ? "anim-bounce" : "anim-shake") : ""
             }`}
-          >
-            {currentCard.image && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={currentCard.image}
-                alt={currentCard.meaning_vi}
-                className="mx-auto mb-4 max-h-52 w-auto rounded-blob object-contain"
-              />
-            )}
-
-            {/* Nghĩa tiếng Việt luôn hiện — nhiều từ không đoán được qua ảnh */}
-            <h1 className="text-3xl leading-tight text-ink">
-              {currentCard.meaning_vi}
-            </h1>
-
-            {showResult ? (
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <span className="font-display text-2xl font-extrabold text-grape">
-                  {currentCard.word}
-                </span>
-                <IconButton
-                  icon={<Volume2 size={20} strokeWidth={2.5} />}
-                  label={`Nghe lại: ${currentCard.word}`}
-                  tone="grape"
-                  onClick={() => speakAnswer(currentCard.word)}
-                />
-              </div>
-            ) : (
-              <div className="mt-2 flex items-center justify-center gap-2">
-                <p className="font-bold text-ink-soft">
-                  {QUESTION_HEADING[mode]}
-                </p>
-                <IconButton
-                  icon={<Volume2 size={20} strokeWidth={2.5} />}
-                  label="Nghe lại câu hỏi"
-                  tone="grape"
-                  onClick={speakQuestion}
-                />
-              </div>
-            )}
-          </Card>
+          />
 
           {/* Đáp án */}
-          <div className="mt-4 space-y-3 lg:mt-0 lg:flex-1">
+          <div
+            className={`mt-4 space-y-3 ${
+              mode === "sentence" ? "" : "lg:mt-0 lg:flex-1"
+            }`}
+          >
             {options.map((opt, i) => {
               let state: OptionState = "idle";
               if (showResult) {
@@ -562,6 +542,7 @@ export default function LearnPage() {
                   index={i}
                   text={opt.text}
                   state={state}
+                  size={mode === "sentence" ? "block" : "pill"}
                   disabled={showResult}
                   onClick={() => handleAnswer(opt.id)}
                 />
@@ -590,7 +571,12 @@ export default function LearnPage() {
                 >
                   {isCorrect ? "🎉 Chính xác!" : "😅 Chưa đúng rồi"}
                 </p>
-                {!isCorrect && (
+                {/*
+                  Chỉ nhắc đáp án cho thẻ từ vựng. Câu giao tiếp dài, nhét vào
+                  thanh này chỉ còn một dòng cắt cụt — mà đề bài phía trên đã
+                  hiện đủ cả câu rồi.
+                */}
+                {!isCorrect && mode === "word" && (
                   <p className="truncate text-sm font-bold text-cherry-dark">
                     Đáp án: {currentCard.word}
                   </p>
