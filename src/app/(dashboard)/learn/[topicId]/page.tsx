@@ -13,15 +13,21 @@ import {
   updateStudySession,
   upsertProgress,
 } from "@/lib/db";
-import type { Card as CardType } from "@/lib/types";
+import type { Card as CardType, Topic } from "@/lib/types";
 import type { CardProgress, ProgressMap } from "@/lib/session";
 import { buildOptions, selectSessionCards } from "@/lib/session";
+import { buildQuestionText, QUESTION_HEADING } from "@/lib/question";
 import { PendingSaveQueue } from "@/lib/pendingSaves";
-import { DEFAULT_CARDS_PER_SESSION, OPTION_COUNT } from "@/lib/constants";
+import {
+  ANSWER_SPEAK_TIMES,
+  DEFAULT_CARDS_PER_SESSION,
+  OPTION_COUNT,
+} from "@/lib/constants";
 import { ArrowLeft, CloudOff, RotateCcw, Volume2 } from "lucide-react";
-import { cancelSpeech, speakText } from "@/lib/utils";
+import { cancelSpeech, speakText, speakTimes } from "@/lib/utils";
 import { Screen, Loader, EmptyState } from "@/components/ui/Layout";
 import Button from "@/components/ui/Button";
+import IconButton from "@/components/ui/IconButton";
 import Card from "@/components/ui/Card";
 import ProgressBar from "@/components/ui/ProgressBar";
 import OptionButton, {
@@ -40,7 +46,8 @@ export default function LearnPage() {
   // Thẻ được chọn cho phiên học này
   const [cards, setCards] = useState<CardType[]>([]);
 
-  const [topicName, setTopicName] = useState("");
+  // Giữ cả chủ đề chứ không riêng tên: kiểu bài và mẫu câu hỏi nằm ở đây
+  const [topic, setTopic] = useState<Topic | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -97,7 +104,7 @@ export default function LearnPage() {
       creatingSessionRef.current = null;
       try {
         // Thiếu cài đặt hoặc thiếu tiến độ không được làm hỏng cả phiên học
-        const [settings, topicCards, progressRows, topic] = await Promise.all([
+        const [settings, topicCards, progressRows, topicRow] = await Promise.all([
           getUserSettings(userId).catch(() => ({
             cards_per_session: DEFAULT_CARDS_PER_SESSION,
           })),
@@ -107,8 +114,8 @@ export default function LearnPage() {
         ]);
         if (cancelled) return;
 
-        topicNameRef.current = topic?.name ?? "";
-        setTopicName(topic?.name ?? "");
+        topicNameRef.current = topicRow?.name ?? "";
+        setTopic(topicRow);
 
         const progress: ProgressMap = {};
         for (const row of progressRows) progress[row.card_id] = row;
@@ -156,6 +163,38 @@ export default function LearnPage() {
     if (!currentCard) return [];
     return buildOptions(currentCard, distractorPool);
   }, [currentCard, distractorPool]);
+
+  const mode = topic?.mode ?? "word";
+
+  /** Câu hỏi đọc lên bằng tiếng Việt cho thẻ đang hiện */
+  const questionText = useMemo(
+    () =>
+      currentCard
+        ? buildQuestionText(currentCard, mode, topic?.question_prompt)
+        : "",
+    [currentCard, mode, topic?.question_prompt]
+  );
+
+  const speakQuestion = useCallback(() => {
+    if (questionText) speakText(questionText, "vi-VN");
+  }, [questionText]);
+
+  /** Đọc đáp án đúng vài lần — nghe lặp lại thì nhớ mặt chữ lâu hơn */
+  const speakAnswer = useCallback((word: string) => {
+    speakTimes(word, { times: ANSWER_SPEAK_TIMES });
+  }, []);
+
+  /**
+   * Đọc câu hỏi một lần mỗi khi sang thẻ mới.
+   *
+   * Vào học bằng cách bấm chủ đề nên trình duyệt đã có thao tác người dùng và
+   * cho phép phát tiếng. Tải thẳng URL rồi F5 thì lượt đọc đầu bị chặn im lặng
+   * — vì vậy cạnh câu hỏi luôn có nút loa để nghe lại.
+   */
+  useEffect(() => {
+    if (loading || sessionDone || !questionText) return;
+    speakText(questionText, "vi-VN");
+  }, [questionText, loading, sessionDone]);
 
   /** Ghi kết quả lên server; thất bại thì xếp hàng chờ thử lại */
   const saveAnswer = useCallback(
@@ -236,8 +275,8 @@ export default function LearnPage() {
       correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 }
     );
 
-    // Đọc to từ tiếng Anh đúng một lần, cho cả câu đúng lẫn câu sai
-    speakText(currentCard.word);
+    // Đọc to đáp án đúng, cho cả câu trả lời đúng lẫn sai
+    speakAnswer(currentCard.word);
 
     if (userId) {
       void saveAnswer(userId, currentCard.id, correct);
@@ -246,6 +285,8 @@ export default function LearnPage() {
   };
 
   const handleNext = useCallback(() => {
+    // Cắt tiếng đang đọc dở — trẻ bấm tiếp là muốn đi ngay, không phải chờ hết 3 lượt
+    cancelSpeech();
     if (currentIndex < cards.length - 1) {
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
@@ -361,7 +402,7 @@ export default function LearnPage() {
             {cheer.emoji}
           </span>
           <h2 className="mt-3 text-3xl text-ink">{cheer.title}</h2>
-          <p className="mt-1 text-ink-soft">{topicName}</p>
+          <p className="mt-1 text-ink-soft">{topic?.name ?? ""}</p>
 
           <div className="my-6">
             <div className="font-display text-6xl font-extrabold text-grape">
@@ -425,13 +466,11 @@ export default function LearnPage() {
       <Screen width="default" className="py-3">
         {/* Thanh trên: quay lại + tiến độ + điểm */}
         <div className="flex items-center gap-3">
-          <button
+          <IconButton
+            icon={<ArrowLeft size={20} strokeWidth={2.5} />}
+            label="Quay lại trang chủ"
             onClick={() => router.push("/home")}
-            aria-label="Quay lại trang chủ"
-            className="grid size-11 shrink-0 place-items-center rounded-full border-2 border-cloud-deep bg-white text-ink-soft transition-colors hover:text-ink"
-          >
-            <ArrowLeft size={20} strokeWidth={2.5} />
-          </button>
+          />
 
           <ProgressBar
             percent={progressPct}
@@ -486,18 +525,25 @@ export default function LearnPage() {
                 <span className="font-display text-2xl font-extrabold text-grape">
                   {currentCard.word}
                 </span>
-                <button
-                  onClick={() => speakText(currentCard.word)}
-                  aria-label={`Nghe lại từ ${currentCard.word}`}
-                  className="grid size-10 place-items-center rounded-full bg-grape-soft text-grape transition-transform active:scale-90"
-                >
-                  <Volume2 size={20} strokeWidth={2.5} />
-                </button>
+                <IconButton
+                  icon={<Volume2 size={20} strokeWidth={2.5} />}
+                  label={`Nghe lại: ${currentCard.word}`}
+                  tone="grape"
+                  onClick={() => speakAnswer(currentCard.word)}
+                />
               </div>
             ) : (
-              <p className="mt-2 font-bold text-ink-soft">
-                Từ tiếng Anh là gì?
-              </p>
+              <div className="mt-2 flex items-center justify-center gap-2">
+                <p className="font-bold text-ink-soft">
+                  {QUESTION_HEADING[mode]}
+                </p>
+                <IconButton
+                  icon={<Volume2 size={20} strokeWidth={2.5} />}
+                  label="Nghe lại câu hỏi"
+                  tone="grape"
+                  onClick={speakQuestion}
+                />
+              </div>
             )}
           </Card>
 

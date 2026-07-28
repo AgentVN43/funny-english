@@ -125,6 +125,16 @@ Mọi hành động đều đi qua đây. Không viết `<button>` trần.
 | `loading` | Hiện vòng quay, tự khoá nút |
 | `icon` | Node đặt trước chữ |
 
+### IconButton — [src/components/ui/IconButton.tsx](src/components/ui/IconButton.tsx)
+
+Nút tròn chỉ có icon: quay lại, nghe lại, đóng. `label` bắt buộc — nút không có chữ thì trình đọc màn hình chỉ còn cái tên này.
+
+| Prop | Giá trị |
+|---|---|
+| `tone` | `plain` (mặc định, viền trắng) · `grape` · `sun` |
+| `icon` | Node lucide |
+| `label` | Câu mô tả hành động, dùng cho `aria-label` lẫn `title` |
+
 ### Card / TappableCard — [src/components/ui/Card.tsx](src/components/ui/Card.tsx)
 
 Khối trắng bo tròn viền dày. `TappableCard` đã gắn sẵn `role="button"`, `tabIndex`, và xử lý phím Enter/Space — dùng nó cho thẻ bấm được thay vì tự thêm `onClick` vào `Card`.
