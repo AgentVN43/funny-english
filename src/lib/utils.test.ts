@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelSpeech, shuffleArray, speakText } from "./utils";
+import { cancelSpeech, shuffleArray, speakText, speakTimes } from "./utils";
 
 class FakeUtterance {
   lang = "";
   rate = 1;
   voice: unknown = null;
+  onend: (() => void) | null = null;
+  onerror: (() => void) | null = null;
   constructor(public text: string) {}
 }
 
@@ -122,6 +124,78 @@ describe("speakText", () => {
   it("không vỡ khi thiết bị không hỗ trợ phát âm", () => {
     vi.stubGlobal("window", {});
     expect(() => speakText("apple")).not.toThrow();
+  });
+});
+
+describe("speakTimes", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Giả lập trình duyệt đọc xong câu vừa phát */
+  const finishSpeaking = () => {
+    const last = synth.spoken[synth.spoken.length - 1];
+    last?.onend?.();
+    vi.runAllTimers();
+  };
+
+  it("chỉ đọc lượt đầu, chờ đọc xong mới đọc lượt sau", () => {
+    speakTimes("apple", { times: 3 });
+    expect(synth.spoken).toHaveLength(1);
+
+    finishSpeaking();
+    expect(synth.spoken).toHaveLength(2);
+
+    finishSpeaking();
+    expect(synth.spoken.map((u) => u.text)).toEqual([
+      "apple",
+      "apple",
+      "apple",
+    ]);
+  });
+
+  it("đọc đủ số lượt rồi dừng hẳn", () => {
+    speakTimes("apple", { times: 2 });
+    finishSpeaking();
+    // Lượt cuối không gắn onend nên không có gì để nối tiếp
+    expect(synth.spoken[1].onend).toBeNull();
+    vi.runAllTimers();
+    expect(synth.spoken).toHaveLength(2);
+  });
+
+  it("huỷ giữa chừng thì các lượt còn lại im", () => {
+    speakTimes("apple", { times: 3 });
+    const first = synth.spoken[0];
+    cancelSpeech();
+    first.onend?.();
+    vi.runAllTimers();
+    expect(synth.spoken).toHaveLength(1);
+  });
+
+  it("lượt đọc mới thay thế lượt cũ, không đọc chồng", () => {
+    speakTimes("apple", { times: 3 });
+    const first = synth.spoken[0];
+    speakTimes("banana", { times: 1 });
+    first.onend?.();
+    vi.runAllTimers();
+    expect(synth.spoken.map((u) => u.text)).toEqual(["apple", "banana"]);
+  });
+
+  it("thiết bị bắn lỗi giữa chừng vẫn đọc nốt các lượt sau", () => {
+    speakTimes("apple", { times: 2 });
+    synth.spoken[0].onerror?.();
+    vi.runAllTimers();
+    expect(synth.spoken).toHaveLength(2);
+  });
+
+  it("số lượt không hợp lệ thì không đọc gì", () => {
+    speakTimes("apple", { times: 0 });
+    vi.runAllTimers();
+    expect(synth.spoken).toHaveLength(0);
   });
 });
 
