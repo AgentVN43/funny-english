@@ -36,12 +36,14 @@ export const QUESTION_HEADING: Record<TopicMode, string> = {
 export function buildQuestionText(
   card: Pick<Card, "meaning_vi">,
   mode: TopicMode,
-  template = ""
+  template?: string | null
 ): string {
-  const subject = card.meaning_vi.trim();
+  // Cột trong database cho phép null, và thẻ tạo trước khi có cột này cũng
+  // trả về null — không chặn ở đây thì cả trang học vỡ
+  const subject = (card.meaning_vi ?? "").trim();
   if (!subject) return "";
 
-  const pattern = template.trim() || DEFAULT_PROMPT[mode];
+  const pattern = (template ?? "").trim() || DEFAULT_PROMPT[mode];
   const text = pattern.includes(PROMPT_PLACEHOLDER)
     ? pattern.split(PROMPT_PLACEHOLDER).join(subject)
     : `${pattern} ${subject}`;
