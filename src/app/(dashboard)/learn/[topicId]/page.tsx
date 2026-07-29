@@ -77,16 +77,21 @@ export default function LearnPage() {
   // Lời gọi tạo dòng đang bay — chặn hai câu trả lời sát nhau tạo hai buổi học
   const creatingSessionRef = useRef<Promise<string> | null>(null);
 
+  const correctSoundRef = useRef<HTMLAudioElement | null>(null);
+  const incorrectSoundRef = useRef<HTMLAudioElement | null>(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       // Vào học bắt buộc đăng nhập — quay lại đúng chủ đề sau khi đăng nhập
       if (!session) {
         router.replace(
-          `/login?redirect=${encodeURIComponent(`/learn/${topicId}`)}`
+          `/login?redirect=${encodeURIComponent(`/learn/${topicId}`)}`,
         );
         return;
       }
       setUserId(session.user.id);
+      correctSoundRef.current = new Audio("/correct_sound.mp3");
+      incorrectSoundRef.current = new Audio("/incorrect_sound.mp3");
     });
   }, [router, topicId]);
 
@@ -105,14 +110,15 @@ export default function LearnPage() {
       creatingSessionRef.current = null;
       try {
         // Thiếu cài đặt hoặc thiếu tiến độ không được làm hỏng cả phiên học
-        const [settings, topicCards, progressRows, topicRow] = await Promise.all([
-          getUserSettings(userId).catch(() => ({
-            cards_per_session: DEFAULT_CARDS_PER_SESSION,
-          })),
-          getCards(topicId),
-          getTopicProgress(userId, topicId).catch(() => [] as CardProgress[]),
-          getTopicById(topicId).catch(() => null),
-        ]);
+        const [settings, topicCards, progressRows, topicRow] =
+          await Promise.all([
+            getUserSettings(userId).catch(() => ({
+              cards_per_session: DEFAULT_CARDS_PER_SESSION,
+            })),
+            getCards(topicId),
+            getTopicProgress(userId, topicId).catch(() => [] as CardProgress[]),
+            getTopicById(topicId).catch(() => null),
+          ]);
         if (cancelled) return;
 
         topicNameRef.current = topicRow?.name ?? "";
@@ -126,7 +132,7 @@ export default function LearnPage() {
         const extra =
           topicCards.length < OPTION_COUNT
             ? await getExtraDistractorCards(topicId).catch(
-                () => [] as CardType[]
+                () => [] as CardType[],
               )
             : [];
         if (cancelled) return;
@@ -134,12 +140,12 @@ export default function LearnPage() {
         setAllCards(topicCards);
         setExtraPool(extra);
         setCards(
-          selectSessionCards(topicCards, progress, settings.cards_per_session)
+          selectSessionCards(topicCards, progress, settings.cards_per_session),
         );
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(
-          err instanceof Error ? err.message : "Không tải được dữ liệu"
+          err instanceof Error ? err.message : "Không tải được dữ liệu",
         );
       } finally {
         // Luôn tắt loading — trước đây lỗi ở đây làm màn hình quay mãi
@@ -155,7 +161,7 @@ export default function LearnPage() {
   /** Nguồn đáp án nhiễu: cả chủ đề, mượn thêm chủ đề khác khi cần */
   const distractorPool = useMemo(
     () => [...allCards, ...extraPool],
-    [allCards, extraPool]
+    [allCards, extraPool],
   );
 
   const currentCard: CardType | undefined = cards[currentIndex];
@@ -173,7 +179,7 @@ export default function LearnPage() {
       currentCard
         ? buildQuestionText(currentCard, mode, topic?.question_prompt)
         : "",
-    [currentCard, mode, topic?.question_prompt]
+    [currentCard, mode, topic?.question_prompt],
   );
 
   const speakQuestion = useCallback(() => {
@@ -207,7 +213,7 @@ export default function LearnPage() {
         setPendingCount(pendingRef.current.size);
       }
     },
-    []
+    [],
   );
 
   /**
@@ -228,7 +234,7 @@ export default function LearnPage() {
             uid,
             topicId,
             topicNameRef.current,
-            correct
+            correct,
           );
           creatingSessionRef.current = p;
           // Hỏng thì xoá cờ để câu sau còn tạo lại được
@@ -251,14 +257,14 @@ export default function LearnPage() {
         // Lịch sử là số liệu phụ — hỏng thì bỏ qua, không cản việc học
       }
     },
-    [topicId]
+    [topicId],
   );
 
   const retryPending = useCallback(async () => {
     if (!userId || pendingRef.current.size === 0) return;
     setRetrying(true);
     const remaining = await pendingRef.current.flush((item) =>
-      upsertProgress(userId, item.cardId, item.correct).then(() => undefined)
+      upsertProgress(userId, item.cardId, item.correct).then(() => undefined),
     );
     setPendingCount(remaining);
     setRetrying(false);
@@ -273,11 +279,31 @@ export default function LearnPage() {
     setShowResult(true);
 
     setScore((s) =>
-      correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 }
+      correct ? { ...s, correct: s.correct + 1 } : { ...s, wrong: s.wrong + 1 },
     );
 
     // Đọc to đáp án đúng, cho cả câu trả lời đúng lẫn sai
-    speakAnswer(currentCard.word);
+    // speakAnswer(currentCard.word);
+
+    if (correct) {
+      const sound = correctSoundRef.current;
+      if (sound) {
+        sound.currentTime = 0; // Reset về đầu nếu user click liên tục
+        sound.play();
+        sound.onended = () => {
+          speakAnswer(currentCard.word);
+        };
+      }
+    } else {
+      const sound = incorrectSoundRef.current;
+      if (sound) {
+        sound.currentTime = 0; // Reset về đầu nếu user click liên tục
+        sound.play();
+        sound.onended = () => {
+          speakAnswer(currentCard.word);
+        };
+      }
+    }
 
     if (userId) {
       void saveAnswer(userId, currentCard.id, correct);
@@ -388,7 +414,8 @@ export default function LearnPage() {
   // ---------------------------------------------------------------
   if (sessionDone) {
     const answered = score.correct + score.wrong;
-    const pct = answered === 0 ? 0 : Math.round((score.correct / answered) * 100);
+    const pct =
+      answered === 0 ? 0 : Math.round((score.correct / answered) * 100);
     const cheer =
       pct >= 80
         ? { emoji: "🏆", title: "Xuất sắc!", tone: "leaf" as const }
