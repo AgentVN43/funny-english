@@ -57,12 +57,41 @@ class FakeLazySpeechSynthesis extends FakeSpeechSynthesis {
   }
 }
 
+/** Thẻ <audio> giả — dùng cho tiếng do server đọc */
+class FakeAudio {
+  static created: FakeAudio[] = [];
+  onended: (() => void) | null = null;
+  paused = false;
+  playCount = 0;
+
+  constructor(public src: string) {
+    FakeAudio.created.push(this);
+  }
+
+  play() {
+    this.playCount++;
+    return Promise.resolve();
+  }
+
+  pause() {
+    this.paused = true;
+  }
+}
+
 let synth: FakeSpeechSynthesis;
 
 beforeEach(() => {
   synth = new FakeSpeechSynthesis();
+  // Máy đủ giọng cho cả hai ngôn ngữ — trường hợp thường. Test nào cần máy
+  // thiếu giọng thì tự đặt lại danh sách này.
+  synth.voices = [
+    { name: "Microsoft Zira", lang: "en-US" },
+    { name: "Microsoft HoaiMy - Vietnamese", lang: "vi-VN" },
+  ];
+  FakeAudio.created = [];
   vi.stubGlobal("window", { speechSynthesis: synth });
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  vi.stubGlobal("Audio", FakeAudio);
 });
 
 afterEach(() => {
@@ -238,24 +267,31 @@ describe("chọn giọng theo ngôn ngữ", () => {
     expect((synth.spoken[0].voice as { name: string }).name).toBe(VI.name);
   });
 
-  it("máy không có giọng tiếng Việt thì im, không đọc bằng giọng tiếng Anh", () => {
-    // Trước đây không tìm thấy giọng là để trình duyệt tự chọn, và nó lấy
-    // giọng mặc định đánh vần chữ Việt — nghe ra một thứ tiếng lạ
+  it("máy không có giọng tiếng Việt thì nhờ server đọc", () => {
+    // Không đặt voice là trình duyệt lấy giọng mặc định đánh vần chữ Việt —
+    // nghe ra một thứ tiếng lạ. Máy Windows không có giọng tiếng Việt, cả
+    // Chrome lẫn Edge, nên đây là đường chạy thật của phần lớn người dùng.
     synth.voices = [EN];
     speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+
     expect(synth.spoken).toHaveLength(0);
+    expect(FakeAudio.created).toHaveLength(1);
+    expect(FakeAudio.created[0].src).toContain("/api/tts");
+    expect(FakeAudio.created[0].src).toContain("lang=vi");
+    expect(FakeAudio.created[0].playCount).toBe(1);
   });
 
-  it("vẫn đọc tiếng Anh bình thường trên máy đó", () => {
+  it("vẫn đọc tiếng Anh bằng giọng của máy, không gọi server vô ích", () => {
     synth.voices = [EN];
     speakText("dog");
     expect(synth.spoken).toHaveLength(1);
+    expect(FakeAudio.created).toHaveLength(0);
   });
 
-  it("chưa biết máy có giọng gì thì cứ đọc, còn hơn im vô cớ", () => {
+  it("máy không có giọng nào thì cũng nhờ server đọc", () => {
     synth.voices = [];
     speakText("xin chào", "vi-VN");
-    expect(synth.spoken).toHaveLength(1);
+    expect(FakeAudio.created).toHaveLength(1);
   });
 
   it("giọng đúng mã vùng được ưu tiên hơn giọng cùng ngôn ngữ khác vùng", () => {
@@ -269,6 +305,65 @@ describe("chọn giọng theo ngôn ngữ", () => {
     synth.voices = [EN];
     expect(hasVoiceFor("en-US")).toBe(true);
     expect(hasVoiceFor("vi-VN")).toBe(false);
+  });
+});
+
+describe("tiếng do server đọc", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Máy chỉ có giọng tiếng Anh — đúng tình huống máy Windows thật
+    synth.voices = [{ name: "Microsoft Zira", lang: "en-US" }];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("phát đủ số lượt, lượt sau chờ lượt trước xong", () => {
+    speakTimes("Câu hỏi tiếng Việt", { times: 3, lang: "vi-VN" });
+    expect(FakeAudio.created).toHaveLength(1);
+
+    FakeAudio.created[0].onended?.();
+    vi.runAllTimers();
+    expect(FakeAudio.created).toHaveLength(2);
+
+    FakeAudio.created[1].onended?.();
+    vi.runAllTimers();
+    expect(FakeAudio.created).toHaveLength(3);
+    // Lượt cuối không nối tiếp nữa
+    expect(FakeAudio.created[2].onended).toBeNull();
+  });
+
+  it("cả ba lượt dùng lại đúng một địa chỉ nên chỉ tải một lần", () => {
+    speakTimes("Câu hỏi tiếng Việt", { times: 3, lang: "vi-VN" });
+    FakeAudio.created[0].onended?.();
+    vi.runAllTimers();
+    expect(FakeAudio.created[1].src).toBe(FakeAudio.created[0].src);
+  });
+
+  it("bấm tiếp giữa chừng thì tắt tiếng ngay và bỏ các lượt còn lại", () => {
+    speakTimes("Câu hỏi tiếng Việt", { times: 3, lang: "vi-VN" });
+    const first = FakeAudio.created[0];
+
+    cancelSpeech();
+    expect(first.paused).toBe(true);
+
+    first.onended?.();
+    vi.runAllTimers();
+    expect(FakeAudio.created).toHaveLength(1);
+  });
+
+  it("đưa nguyên câu vào địa chỉ để server đọc đúng chữ đó", () => {
+    speakText("Tên tiếng Anh của con chó là gì?", "vi-VN");
+    // URLSearchParams mã hoá khoảng trắng thành dấu cộng, server giải mã lại đúng
+    const src = decodeURIComponent(FakeAudio.created[0].src).replace(/\+/g, " ");
+    expect(src).toContain("Tên tiếng Anh của con chó là gì?");
+  });
+
+  it("hai câu khác nhau cho ra hai địa chỉ khác nhau", () => {
+    speakText("Câu một", "vi-VN");
+    speakText("Câu hai", "vi-VN");
+    expect(FakeAudio.created[1].src).not.toBe(FakeAudio.created[0].src);
   });
 });
 
@@ -305,7 +400,8 @@ describe("chờ trình duyệt nạp giọng", () => {
   it("máy không bao giờ báo nạp xong thì sau một giây vẫn đọc", () => {
     speakText("dog");
     vi.advanceTimersByTime(1000);
-    expect(lazy.spoken).toHaveLength(1);
+    // Hết hạn chờ mà vẫn không thấy giọng nào thì nhờ server đọc
+    expect(FakeAudio.created).toHaveLength(1);
   });
 
   it("chuyển thẻ trong lúc chờ thì bỏ luôn lượt đọc cũ", () => {

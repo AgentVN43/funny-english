@@ -1,3 +1,5 @@
+import { ttsUrl } from "./tts";
+
 export function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -44,7 +46,7 @@ function getVoices(): SpeechSynthesisVoice[] {
  * Trình duyệt không có `addEventListener` trên speechSynthesis thì coi như
  * danh sách đã sẵn sàng, chờ nữa cũng không có gì để chờ.
  */
-function whenVoicesReady(run: () => void) {
+export function whenVoicesReady(run: () => void) {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   const synth = window.speechSynthesis;
 
@@ -110,11 +112,59 @@ export function hasVoiceFor(lang: string): boolean {
  */
 let speechGeneration = 0;
 
+/** File tiếng đang phát từ server — giữ lại để còn tắt được */
+let currentAudio: HTMLAudioElement | null = null;
+
 /** Huỷ phát âm đang chạy — gọi khi chuyển thẻ hoặc rời trang học */
 export function cancelSpeech() {
   speechGeneration++;
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
+}
+
+/**
+ * Phát tiếng do server đọc, lặp lại `times` lần.
+ *
+ * Dùng khi trình duyệt không có giọng cho ngôn ngữ đó — máy Windows gần như
+ * luôn thiếu giọng tiếng Việt, cả Chrome lẫn Edge.
+ *
+ * Lượt đầu của một câu phải chờ server sinh tiếng; các lượt sau và những lần
+ * gặp lại câu đó lấy từ bộ nhớ đệm của trình duyệt nên phát ra là nghe ngay.
+ */
+function playServerVoice(
+  text: string,
+  lang: string,
+  times: number,
+  gapMs: number,
+  generation: number
+) {
+  if (typeof Audio === "undefined") return;
+
+  const url = ttsUrl(text, lang);
+  let remaining = times;
+
+  const playOnce = () => {
+    if (generation !== speechGeneration) return;
+
+    remaining--;
+    const audio = new Audio(url);
+    currentAudio = audio;
+    if (remaining > 0) {
+      audio.onended = () => {
+        if (generation !== speechGeneration) return;
+        setTimeout(playOnce, gapMs);
+      };
+    }
+    // Trình duyệt chặn phát tự động khi chưa có thao tác người dùng — nút loa
+    // cạnh câu hỏi là đường thoát, không cần báo lỗi ầm ĩ
+    void audio.play().catch(() => {});
+  };
+
+  playOnce();
 }
 
 function makeUtterance(
@@ -157,11 +207,13 @@ export function speakTimes(
     if (generation !== speechGeneration) return;
 
     const voice = findVoice(lang);
-    // Máy có giọng nhưng không có giọng nào cho ngôn ngữ này thì thôi không
-    // đọc. Không đặt `voice` là trình duyệt lấy giọng mặc định — thường là
-    // tiếng Anh — rồi đánh vần chữ tiếng Việt thành một thứ tiếng không ai
-    // hiểu. Chữ vẫn hiện đủ trên màn hình nên im lặng còn hơn.
-    if (!voice && getVoices().length > 0) return;
+    // Máy không có giọng cho ngôn ngữ này thì lấy tiếng từ server. Để trình
+    // duyệt tự chọn thì nó dùng giọng mặc định — thường là tiếng Anh — rồi
+    // đánh vần chữ tiếng Việt thành một thứ tiếng không ai hiểu.
+    if (!voice) {
+      playServerVoice(text, lang, times, gapMs, generation);
+      return;
+    }
 
     let remaining = times;
     const speakOnce = () => {
