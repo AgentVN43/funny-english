@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildQuestionText, questionHeading, SPEECH_LANG } from "./question";
+import {
+  buildQuestionText,
+  formatPronunciation,
+  questionHeading,
+  SPEECH_LANG,
+} from "./question";
 
 const card = (meaning_vi: string) => ({ meaning_vi });
 
@@ -97,5 +102,35 @@ describe("SPEECH_LANG", () => {
   it("mỗi ngôn ngữ có mã giọng đọc riêng", () => {
     expect(SPEECH_LANG.en).toBe("en-US");
     expect(SPEECH_LANG.zh).toBe("zh-CN");
+  });
+});
+
+describe("formatPronunciation", () => {
+  it("IPA tiếng Anh được đặt giữa hai gạch chéo", () => {
+    expect(formatPronunciation("ˈæp.əl", "en")).toBe("/ˈæp.əl/");
+  });
+
+  it("không bọc thêm khi admin đã tự gõ hai gạch chéo", () => {
+    expect(formatPronunciation("/ˈæp.əl/", "en")).toBe("/ˈæp.əl/");
+  });
+
+  it("pinyin tiếng Trung viết trần, không có gạch chéo", () => {
+    expect(formatPronunciation("píngguǒ", "zh")).toBe("píngguǒ");
+  });
+
+  it("thẻ chưa có phiên âm trả về chuỗi rỗng để bên gọi bỏ qua", () => {
+    expect(formatPronunciation(null, "en")).toBe("");
+    expect(formatPronunciation(undefined, "zh")).toBe("");
+    expect(formatPronunciation("", "en")).toBe("");
+    expect(formatPronunciation("   ", "zh")).toBe("");
+  });
+
+  it("cắt khoảng trắng thừa hai đầu", () => {
+    expect(formatPronunciation("  píngguǒ  ", "zh")).toBe("píngguǒ");
+    expect(formatPronunciation("  ˈæp.əl  ", "en")).toBe("/ˈæp.əl/");
+  });
+
+  it("mặc định tiếng Anh khi chưa biết ngôn ngữ", () => {
+    expect(formatPronunciation("ˈæp.əl")).toBe("/ˈæp.əl/");
   });
 });

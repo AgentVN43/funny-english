@@ -15,6 +15,7 @@ function card(id: string, word = id, meaning = `nghĩa ${id}`): Card {
     topic_id: "t1",
     word,
     meaning_vi: meaning,
+    pronunciation: null,
     image: "",
     created_at: "",
     updated_at: "",

@@ -213,15 +213,36 @@ export async function getCardById(id: string) {
   return data as Card;
 }
 
-export async function createCard(
-  topic_id: string,
-  word: string,
-  meaning_vi: string,
-  image: string
-) {
+/**
+ * Dữ liệu tạo một thẻ mới.
+ *
+ * Dùng object chứ không phải nhiều tham số rời: `image` và `pronunciation` đều
+ * là chuỗi tuỳ chọn nên truyền theo thứ tự rất dễ đảo nhầm chỗ.
+ */
+export interface CardInput {
+  topic_id: string;
+  word: string;
+  meaning_vi: string;
+  image?: string;
+  /** IPA (tiếng Anh) hoặc pinyin (tiếng Trung); để trống thì lưu null */
+  pronunciation?: string | null;
+}
+
+/** Chuẩn hoá trước khi ghi: chuỗi rỗng thành null cho đúng nghĩa "chưa có" */
+function toCardRow(input: CardInput) {
+  return {
+    topic_id: input.topic_id,
+    word: input.word,
+    meaning_vi: input.meaning_vi,
+    image: input.image ?? "",
+    pronunciation: input.pronunciation?.trim() || null,
+  };
+}
+
+export async function createCard(input: CardInput) {
   const { data, error } = await supabase
     .from("cards")
-    .insert({ topic_id, word, meaning_vi, image })
+    .insert(toCardRow(input))
     .select()
     .single();
   if (error) throw error;
@@ -229,11 +250,12 @@ export async function createCard(
 }
 
 /** Thêm nhiều thẻ một lần — dùng cho chức năng nhập từ hàng loạt */
-export async function createCards(
-  rows: { topic_id: string; word: string; meaning_vi: string; image: string }[]
-) {
+export async function createCards(rows: CardInput[]) {
   if (rows.length === 0) return [];
-  const { data, error } = await supabase.from("cards").insert(rows).select();
+  const { data, error } = await supabase
+    .from("cards")
+    .insert(rows.map(toCardRow))
+    .select();
   if (error) throw error;
   return data as Card[];
 }

@@ -29,6 +29,27 @@ export const SPEECH_LANG: Record<Language, string> = {
 };
 
 /**
+ * Phiên âm để hiện lên màn hình. Trả về chuỗi rỗng khi thẻ chưa có — bên gọi
+ * kiểm tra rỗng là bỏ qua, khỏi phải phân biệt null với chuỗi trắng.
+ *
+ * IPA tiếng Anh theo quy ước đặt giữa hai gạch chéo; pinyin tiếng Trung viết
+ * trần vì không có quy ước đó.
+ *
+ * Đây chỉ là chuỗi HIỂN THỊ, không bao giờ đưa vào bộ đọc — đọc phiên âm lên
+ * sẽ thành nghe hai lần cùng một từ.
+ */
+export function formatPronunciation(
+  pronunciation: string | null | undefined,
+  language: Language = DEFAULT_LANGUAGE
+): string {
+  const text = (pronunciation ?? "").trim();
+  if (!text) return "";
+  if (language !== "en") return text;
+  // Admin gõ sẵn /…/ rồi thì đừng bọc thêm lần nữa thành //…//
+  return text.startsWith("/") && text.endsWith("/") ? text : `/${text}/`;
+}
+
+/**
  * Mẫu câu hỏi mặc định khi chủ đề không đặt riêng.
  *
  * Chủ đề mẫu câu chỉ đọc thẳng câu tiếng Việt — thêm lời dẫn vào trước mỗi câu

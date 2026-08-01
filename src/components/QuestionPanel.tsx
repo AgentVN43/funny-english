@@ -3,7 +3,7 @@
 import { Volume2 } from "lucide-react";
 import { DEFAULT_LANGUAGE } from "@/lib/types";
 import type { Card as CardType, Language, TopicMode } from "@/lib/types";
-import { questionHeading } from "@/lib/question";
+import { formatPronunciation, questionHeading } from "@/lib/question";
 import Card from "@/components/ui/Card";
 import IconButton from "@/components/ui/IconButton";
 
@@ -35,6 +35,9 @@ export default function QuestionPanel({
   onSpeakAnswer,
   className = "",
 }: Props) {
+  // Chỉ để đọc bằng mắt — không bao giờ truyền vào bộ đọc
+  const pronunciation = formatPronunciation(card.pronunciation, language);
+
   if (mode === "sentence") {
     return (
       <Card className={`anim-slide-in p-5 ${className}`}>
@@ -56,9 +59,14 @@ export default function QuestionPanel({
 
         {showResult && (
           <div className="mt-4 flex items-start gap-2 border-t-2 border-cloud-deep pt-4">
-            <p className="flex-1 font-display text-xl font-extrabold leading-snug text-grape">
-              {card.word}
-            </p>
+            <div className="flex-1">
+              <p className="font-display text-xl font-extrabold leading-snug text-grape">
+                {card.word}
+              </p>
+              {pronunciation && (
+                <p className="mt-1 text-base text-ink-soft">{pronunciation}</p>
+              )}
+            </div>
             <IconButton
               icon={<Volume2 size={20} strokeWidth={2.5} />}
               label={`Nghe lại: ${card.word}`}
@@ -86,16 +94,21 @@ export default function QuestionPanel({
       <h1 className="text-3xl leading-tight text-ink">{card.meaning_vi}</h1>
 
       {showResult ? (
-        <div className="mt-3 flex items-center justify-center gap-2">
-          <span className="font-display text-2xl font-extrabold text-grape">
-            {card.word}
-          </span>
-          <IconButton
-            icon={<Volume2 size={20} strokeWidth={2.5} />}
-            label={`Nghe lại: ${card.word}`}
-            tone="grape"
-            onClick={onSpeakAnswer}
-          />
+        <div className="mt-3">
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-display text-2xl font-extrabold text-grape">
+              {card.word}
+            </span>
+            <IconButton
+              icon={<Volume2 size={20} strokeWidth={2.5} />}
+              label={`Nghe lại: ${card.word}`}
+              tone="grape"
+              onClick={onSpeakAnswer}
+            />
+          </div>
+          {pronunciation && (
+            <p className="mt-1 text-base text-ink-soft">{pronunciation}</p>
+          )}
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-center gap-2">

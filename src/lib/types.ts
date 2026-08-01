@@ -63,6 +63,16 @@ export interface Card {
   topic_id: string;
   word: string;
   meaning_vi: string;
+  /**
+   * Phiên âm: IPA cho tiếng Anh, pinyin cho tiếng Trung.
+   *
+   * Tách khỏi `word` chứ không gộp chung, vì bộ đọc sẽ đọc cả phiên âm thành
+   * ra nghe hai lần — "苹果 píngguǒ" bị đọc thành "píngguǒ píngguǒ".
+   *
+   * Null hoặc rỗng đều nghĩa là chưa có: thẻ tạo trước khi có cột này trả về
+   * null, còn form để trống thì thường lưu chuỗi rỗng.
+   */
+  pronunciation: string | null;
   image: string;
   created_at: string;
   updated_at: string;

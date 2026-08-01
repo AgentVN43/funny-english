@@ -10,13 +10,15 @@ import {
   updateCard,
   deleteCard,
   getTopics,
+  getCategories,
 } from "@/lib/db";
 import {
   parseImportText,
   importPlaceholder,
   importHint,
 } from "@/lib/import-cards";
-import type { Card, Topic, TopicMode } from "@/lib/types";
+import { DEFAULT_LANGUAGE } from "@/lib/types";
+import type { Card, Category, Language, Topic, TopicMode } from "@/lib/types";
 import {
   Button,
   Card as AntCard,
@@ -39,11 +41,13 @@ function AdminCardsContent() {
   const searchParams = useSearchParams();
   const [cards, setCards] = useState<Card[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Card | null>(null);
   const [word, setWord] = useState("");
   const [meaningVi, setMeaningVi] = useState("");
+  const [pronunciation, setPronunciation] = useState("");
   const [image, setImage] = useState("");
   const [topicId, setTopicId] = useState(searchParams.get("topic_id") || "");
   const [filterTopic, setFilterTopic] = useState(searchParams.get("topic_id") || "");
@@ -55,15 +59,25 @@ function AdminCardsContent() {
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
 
+  /** Ngôn ngữ của một chủ đề, suy từ category chứa nó */
+  const languageOfTopic = (tId: string): Language => {
+    const catId = topics.find((t) => t.id === tId)?.category_id;
+    return categories.find((c) => c.id === catId)?.language ?? DEFAULT_LANGUAGE;
+  };
+
   // Chủ đề mẫu câu chứa cả câu chứ không phải từ đơn: ô nhập phải rộng ra,
   // nhãn phải đổi, và ảnh thì không dùng đến
   const isSentence =
     topics.find((t) => t.id === topicId)?.mode === "sentence";
+  const language = languageOfTopic(topicId);
+  const isChinese = language === "zh";
 
-  // Kiểu của chủ đề đang nhập quyết định định dạng mỗi dòng
+  // Kiểu bài và ngôn ngữ của chủ đề đang nhập quyết định định dạng mỗi dòng —
+  // tiếng Trung có thêm cột pinyin ngay sau chữ Hán
   const importMode: TopicMode =
     topics.find((t) => t.id === importTopicId)?.mode ?? "word";
-  const parsed = parseImportText(importText, importMode);
+  const importLanguage = languageOfTopic(importTopicId);
+  const parsed = parseImportText(importText, importMode, importLanguage);
 
   async function loadCards(tId?: string) {
     try {
@@ -93,8 +107,9 @@ function AdminCardsContent() {
         return;
       }
       try {
-        const tps = await getTopics();
+        const [tps, cats] = await Promise.all([getTopics(), getCategories()]);
         setTopics(tps);
+        setCategories(cats);
         await loadCards(filterTopic || undefined);
       } finally {
         setLoading(false);
@@ -111,6 +126,7 @@ function AdminCardsContent() {
     setEditing(null);
     setWord("");
     setMeaningVi("");
+    setPronunciation("");
     setImage("");
     setTopicId(filterTopic);
     setDrawerOpen(true);
@@ -120,6 +136,7 @@ function AdminCardsContent() {
     setEditing(card);
     setWord(card.word);
     setMeaningVi(card.meaning_vi);
+    setPronunciation(card.pronunciation ?? "");
     setImage(card.image);
     setTopicId(card.topic_id);
     setDrawerOpen(true);
@@ -133,17 +150,19 @@ function AdminCardsContent() {
     setSaving(true);
     // Đổi chủ đề sang kiểu mẫu câu thì bỏ luôn ảnh cũ, đừng để lại rác ẩn
     const imageValue = isSentence ? "" : image.trim();
+    const input = {
+      topic_id: topicId,
+      word: word.trim(),
+      meaning_vi: meaningVi.trim(),
+      pronunciation: pronunciation.trim() || null,
+      image: imageValue,
+    };
     try {
       if (editing) {
-        await updateCard(editing.id, {
-          word: word.trim(),
-          meaning_vi: meaningVi.trim(),
-          image: imageValue,
-          topic_id: topicId,
-        });
+        await updateCard(editing.id, input);
         message.success("Đã cập nhật thẻ");
       } else {
-        await createCard(topicId, word.trim(), meaningVi.trim(), imageValue);
+        await createCard(input);
         message.success("Đã tạo thẻ mới");
       }
       setDrawerOpen(false);
@@ -179,6 +198,9 @@ function AdminCardsContent() {
           topic_id: importTopicId,
           word: r.word,
           meaning_vi: r.meaning_vi,
+          // Tiếng Trung có pinyin ngay trong dòng nhập; tiếng Anh nhập IPA
+          // sau bằng tay trong form Sửa
+          pronunciation: r.pronunciation,
           // Chủ đề mẫu câu không dùng ảnh
           image: importMode === "sentence" ? "" : r.image,
         }))
@@ -278,7 +300,15 @@ function AdminCardsContent() {
                   />
                 )}
                 <div className="flex-1 min-w-0">
-                  <Text strong className="text-base block">{card.word}</Text>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <Text strong className="text-base">{card.word}</Text>
+                    {/* Hiện nguyên văn phiên âm đã nhập để dễ soát lại */}
+                    {card.pronunciation?.trim() && (
+                      <Text type="secondary" className="text-sm">
+                        {card.pronunciation.trim()}
+                      </Text>
+                    )}
+                  </div>
                   <Text type="secondary" className="text-sm block truncate">
                     {card.meaning_vi}
                   </Text>
@@ -364,6 +394,22 @@ function AdminCardsContent() {
           </div>
           <div>
             <Text className="block mb-1 font-medium">
+              Phiên âm{isChinese ? " (Pinyin)" : " (IPA)"} — không bắt buộc
+            </Text>
+            <Input
+              value={pronunciation}
+              onChange={(e) => setPronunciation(e.target.value)}
+              placeholder={isChinese ? "VD: píngguǒ" : "VD: ˈæpəl"}
+              size="large"
+              className="rounded-xl"
+            />
+            <Text type="secondary" className="block mt-1 text-xs">
+              Chỉ hiện lên màn hình cho trẻ đọc theo, không đọc bằng loa —
+              tránh đọc trùng với {isSentence ? "câu" : "từ"} chính.
+            </Text>
+          </div>
+          <div>
+            <Text className="block mb-1 font-medium">
               {isSentence ? "Câu tiếng Việt" : "Nghĩa (Tiếng Việt)"}
             </Text>
             {isSentence ? (
@@ -445,12 +491,12 @@ function AdminCardsContent() {
               <div>
                 <Text className="block mb-1 font-medium">Danh sách</Text>
                 <Text type="secondary" className="block mb-2 text-sm">
-                  {importHint(importMode)}
+                  {importHint(importMode, importLanguage)}
                 </Text>
                 <Input.TextArea
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
-                  placeholder={importPlaceholder(importMode)}
+                  placeholder={importPlaceholder(importMode, importLanguage)}
                   autoSize={{ minRows: 6, maxRows: 14 }}
                   className="rounded-xl font-mono text-sm"
                 />
@@ -499,6 +545,9 @@ function AdminCardsContent() {
                       {parsed.valid.slice(0, 3).map((r) => (
                         <div key={r.line} className="text-xs text-gray-700">
                           <span className="font-medium">{r.word}</span>
+                          {r.pronunciation && (
+                            <span className="text-gray-400"> [{r.pronunciation}]</span>
+                          )}
                           {" → "}
                           {r.meaning_vi}
                           {r.image && importMode === "word" && (
