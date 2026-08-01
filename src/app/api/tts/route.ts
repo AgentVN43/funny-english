@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 const VOICES: Record<string, string> = {
   vi: "vi-VN-HoaiMyNeural",
   en: "en-US-AnaNeural",
+  zh: "zh-CN-XiaoyiNeural",
 };
 
 /** Chặn người ta biến route này thành dịch vụ đọc văn bản miễn phí */

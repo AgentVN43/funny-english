@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getCategories, createCategory, updateCategory, deleteCategory } from "@/lib/db";
-import type { Category } from "@/lib/types";
+import { DEFAULT_LANGUAGE } from "@/lib/types";
+import type { Category, Language } from "@/lib/types";
+import { LANGUAGE_NAME } from "@/lib/question";
 import {
   Button,
   Card,
   Typography,
   Drawer,
   Input,
+  Select,
   message,
   Spin,
   Popconfirm,
@@ -21,6 +24,11 @@ import { Screen } from "@/components/ui/Layout";
 
 const { Title, Text } = Typography;
 
+const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
+  { value: "en", label: LANGUAGE_NAME.en },
+  { value: "zh", label: LANGUAGE_NAME.zh },
+];
+
 export default function AdminCategoriesPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -29,6 +37,7 @@ export default function AdminCategoriesPage() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
   const [saving, setSaving] = useState(false);
 
   async function loadData() {
@@ -68,6 +77,7 @@ export default function AdminCategoriesPage() {
     setEditing(null);
     setName("");
     setDescription("");
+    setLanguage(DEFAULT_LANGUAGE);
     setDrawerOpen(true);
   };
 
@@ -75,6 +85,7 @@ export default function AdminCategoriesPage() {
     setEditing(cat);
     setName(cat.name);
     setDescription(cat.description);
+    setLanguage(cat.language ?? DEFAULT_LANGUAGE);
     setDrawerOpen(true);
   };
 
@@ -86,10 +97,14 @@ export default function AdminCategoriesPage() {
     setSaving(true);
     try {
       if (editing) {
-        await updateCategory(editing.id, { name: name.trim(), description: description.trim() });
+        await updateCategory(editing.id, {
+          name: name.trim(),
+          description: description.trim(),
+          language,
+        });
         message.success("Đã cập nhật categories");
       } else {
-        await createCategory(name.trim(), description.trim());
+        await createCategory(name.trim(), description.trim(), language);
         message.success("Đã tạo categories mới");
       }
       setDrawerOpen(false);
@@ -151,8 +166,11 @@ export default function AdminCategoriesPage() {
                   </div>
                   <div>
                     <Text strong className="text-base block">{cat.name}</Text>
+                    <Text type="secondary" className="text-sm block">
+                      {LANGUAGE_NAME[cat.language ?? DEFAULT_LANGUAGE]}
+                    </Text>
                     {cat.description && (
-                      <Text type="secondary" className="text-sm">{cat.description}</Text>
+                      <Text type="secondary" className="text-xs">{cat.description}</Text>
                     )}
                   </div>
                 </div>
@@ -165,7 +183,7 @@ export default function AdminCategoriesPage() {
                   />
                   <Popconfirm
                     title="Xóa categories này?"
-                    description="Các chủ đề bên trong sẽ không còn thuộc categories nào"
+                    description="Chỉ xóa được khi bên trong không còn chủ đề nào"
                     onConfirm={() => handleDelete(cat.id)}
                     okText="Xóa"
                     cancelText="Hủy"
@@ -200,11 +218,26 @@ export default function AdminCategoriesPage() {
         <div className="drawer-handle" />
         <div className="max-w-lg mx-auto space-y-4">
           <div>
+            <Text className="block mb-1 font-medium">Ngôn ngữ</Text>
+            <Select
+              value={language}
+              onChange={(v: Language) => setLanguage(v)}
+              size="large"
+              className="w-full rounded-xl"
+              options={LANGUAGE_OPTIONS}
+            />
+            <Text type="secondary" className="block mt-1 text-xs">
+              Đáp án nhiễu chỉ lấy trong cùng ngôn ngữ, nên mỗi nhóm chỉ chứa
+              một thứ tiếng.
+              {editing && " Đổi ngôn ngữ sẽ đổi cho mọi chủ đề bên trong."}
+            </Text>
+          </div>
+          <div>
             <Text className="block mb-1 font-medium">Tên categories</Text>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="VD: Tiếng anh tiểu học, Tiếng anh giao tiếp..."
+              placeholder="VD: Tiếng Anh tiểu học, Tiếng Trung giao tiếp..."
               size="large"
               className="rounded-xl"
             />

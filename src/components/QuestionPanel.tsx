@@ -1,15 +1,18 @@
 "use client";
 
 import { Volume2 } from "lucide-react";
-import type { Card as CardType, TopicMode } from "@/lib/types";
-import { QUESTION_HEADING } from "@/lib/question";
+import { DEFAULT_LANGUAGE } from "@/lib/types";
+import type { Card as CardType, Language, TopicMode } from "@/lib/types";
+import { questionHeading } from "@/lib/question";
 import Card from "@/components/ui/Card";
 import IconButton from "@/components/ui/IconButton";
 
 interface Props {
   card: CardType;
   mode: TopicMode;
-  /** Đã chọn đáp án — lộ đáp án tiếng Anh */
+  /** Ngôn ngữ đang học — quyết định chữ "tiếng Anh" hay "tiếng Trung" */
+  language?: Language;
+  /** Đã chọn đáp án — lộ đáp án ngoại ngữ */
   showResult: boolean;
   onSpeakQuestion: () => void;
   onSpeakAnswer: () => void;
@@ -26,6 +29,7 @@ interface Props {
 export default function QuestionPanel({
   card,
   mode,
+  language = DEFAULT_LANGUAGE,
   showResult,
   onSpeakQuestion,
   onSpeakAnswer,
@@ -36,7 +40,7 @@ export default function QuestionPanel({
       <Card className={`anim-slide-in p-5 ${className}`}>
         <div className="flex items-start justify-between gap-3">
           <p className="font-bold text-ink-soft">
-            {QUESTION_HEADING.sentence}
+            {questionHeading("sentence", language)}
           </p>
           <IconButton
             icon={<Volume2 size={20} strokeWidth={2.5} />}
@@ -95,7 +99,9 @@ export default function QuestionPanel({
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-center gap-2">
-          <p className="font-bold text-ink-soft">{QUESTION_HEADING.word}</p>
+          <p className="font-bold text-ink-soft">
+            {questionHeading("word", language)}
+          </p>
           <IconButton
             icon={<Volume2 size={20} strokeWidth={2.5} />}
             label="Nghe lại câu hỏi"

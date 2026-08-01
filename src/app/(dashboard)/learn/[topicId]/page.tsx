@@ -7,16 +7,18 @@ import {
   getCards,
   getExtraDistractorCards,
   getTopicById,
+  getTopicLanguage,
   getTopicProgress,
   getUserSettings,
   startStudySession,
   updateStudySession,
   upsertProgress,
 } from "@/lib/db";
-import type { Card as CardType, Topic } from "@/lib/types";
+import { DEFAULT_LANGUAGE } from "@/lib/types";
+import type { Card as CardType, Language, Topic } from "@/lib/types";
 import type { CardProgress, ProgressMap } from "@/lib/session";
 import { buildOptions, selectSessionCards } from "@/lib/session";
-import { buildQuestionText } from "@/lib/question";
+import { buildQuestionText, SPEECH_LANG } from "@/lib/question";
 import { PendingSaveQueue } from "@/lib/pendingSaves";
 import {
   ANSWER_SPEAK_TIMES,
@@ -49,6 +51,9 @@ export default function LearnPage() {
 
   // Giữ cả chủ đề chứ không riêng tên: kiểu bài và mẫu câu hỏi nằm ở đây
   const [topic, setTopic] = useState<Topic | null>(null);
+  // Ngôn ngữ đang học, suy từ category của chủ đề — quyết định giọng đọc đáp án
+  // và chữ "tiếng Anh"/"tiếng Trung" trong câu hỏi
+  const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -110,7 +115,7 @@ export default function LearnPage() {
       creatingSessionRef.current = null;
       try {
         // Thiếu cài đặt hoặc thiếu tiến độ không được làm hỏng cả phiên học
-        const [settings, topicCards, progressRows, topicRow] =
+        const [settings, topicCards, progressRows, topicRow, topicLanguage] =
           await Promise.all([
             getUserSettings(userId).catch(() => ({
               cards_per_session: DEFAULT_CARDS_PER_SESSION,
@@ -118,11 +123,13 @@ export default function LearnPage() {
             getCards(topicId),
             getTopicProgress(userId, topicId).catch(() => [] as CardProgress[]),
             getTopicById(topicId).catch(() => null),
+            getTopicLanguage(topicId).catch(() => DEFAULT_LANGUAGE),
           ]);
         if (cancelled) return;
 
         topicNameRef.current = topicRow?.name ?? "";
         setTopic(topicRow);
+        setLanguage(topicLanguage);
 
         const progress: ProgressMap = {};
         for (const row of progressRows) progress[row.card_id] = row;
@@ -177,9 +184,9 @@ export default function LearnPage() {
   const questionText = useMemo(
     () =>
       currentCard
-        ? buildQuestionText(currentCard, mode, topic?.question_prompt)
+        ? buildQuestionText(currentCard, mode, topic?.question_prompt, language)
         : "",
-    [currentCard, mode, topic?.question_prompt],
+    [currentCard, mode, topic?.question_prompt, language],
   );
 
   const speakQuestion = useCallback(() => {
@@ -187,9 +194,15 @@ export default function LearnPage() {
   }, [questionText]);
 
   /** Đọc đáp án đúng vài lần — nghe lặp lại thì nhớ mặt chữ lâu hơn */
-  const speakAnswer = useCallback((word: string) => {
-    speakTimes(word, { times: ANSWER_SPEAK_TIMES });
-  }, []);
+  const speakAnswer = useCallback(
+    (word: string) => {
+      speakTimes(word, {
+        times: ANSWER_SPEAK_TIMES,
+        lang: SPEECH_LANG[language],
+      });
+    },
+    [language],
+  );
 
   /**
    * Đọc câu hỏi một lần mỗi khi sang thẻ mới.
@@ -542,6 +555,7 @@ export default function LearnPage() {
             key={currentCard.id}
             card={currentCard}
             mode={mode}
+            language={language}
             showResult={showResult}
             onSpeakQuestion={speakQuestion}
             onSpeakAnswer={() => speakAnswer(currentCard.word)}

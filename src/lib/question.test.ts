@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildQuestionText } from "./question";
+import { buildQuestionText, questionHeading, SPEECH_LANG } from "./question";
 
 const card = (meaning_vi: string) => ({ meaning_vi });
 
@@ -49,5 +49,53 @@ describe("buildQuestionText", () => {
   it("thẻ chưa có nghĩa tiếng Việt thì không đọc gì", () => {
     expect(buildQuestionText(card(""), "word")).toBe("");
     expect(buildQuestionText(card("   "), "sentence")).toBe("");
+  });
+});
+
+describe("buildQuestionText — nhiều ngôn ngữ", () => {
+  it("chủ đề tiếng Trung hỏi tên tiếng Trung, không phải tiếng Anh", () => {
+    expect(buildQuestionText(card("con chó"), "word", null, "zh")).toBe(
+      "Tên tiếng Trung của con chó là gì?"
+    );
+  });
+
+  it("không truyền ngôn ngữ thì mặc định tiếng Anh — giữ nguyên nội dung cũ", () => {
+    expect(buildQuestionText(card("con chó"), "word")).toBe(
+      "Tên tiếng Anh của con chó là gì?"
+    );
+  });
+
+  it("chủ đề mẫu câu tiếng Trung vẫn chỉ đọc câu tiếng Việt", () => {
+    expect(buildQuestionText(card("Bạn tên gì?"), "sentence", null, "zh")).toBe(
+      "Bạn tên gì?"
+    );
+  });
+
+  it("mẫu riêng của chủ đề vẫn thắng mẫu mặc định theo ngôn ngữ", () => {
+    expect(
+      buildQuestionText(card("quả táo"), "word", "{tu} đọc thế nào?", "zh")
+    ).toBe("quả táo đọc thế nào?");
+  });
+});
+
+describe("questionHeading", () => {
+  it("đổi theo ngôn ngữ của chủ đề", () => {
+    expect(questionHeading("word", "en")).toBe("Từ tiếng Anh là gì?");
+    expect(questionHeading("word", "zh")).toBe("Từ tiếng Trung là gì?");
+    expect(questionHeading("sentence", "zh")).toBe(
+      "Câu này tiếng Trung nói thế nào?"
+    );
+  });
+
+  it("mặc định tiếng Anh khi chưa biết ngôn ngữ", () => {
+    expect(questionHeading("word")).toBe("Từ tiếng Anh là gì?");
+    expect(questionHeading("sentence")).toBe("Câu này tiếng Anh nói thế nào?");
+  });
+});
+
+describe("SPEECH_LANG", () => {
+  it("mỗi ngôn ngữ có mã giọng đọc riêng", () => {
+    expect(SPEECH_LANG.en).toBe("en-US");
+    expect(SPEECH_LANG.zh).toBe("zh-CN");
   });
 });

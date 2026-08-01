@@ -1,8 +1,10 @@
 import { supabase } from "./supabase";
 import { DEFAULT_CARDS_PER_SESSION, MASTERY_STREAK } from "./constants";
 import type { CardProgress } from "./session";
+import { DEFAULT_LANGUAGE } from "./types";
 import type {
   Category,
+  Language,
   Profile,
   Topic,
   TopicMode,
@@ -22,10 +24,14 @@ export async function getCategories() {
   return data as Category[];
 }
 
-export async function createCategory(name: string, description: string) {
+export async function createCategory(
+  name: string,
+  description: string,
+  language: Language = DEFAULT_LANGUAGE
+) {
   const { data, error } = await supabase
     .from("categories")
-    .insert({ name, description })
+    .insert({ name, description, language })
     .select()
     .single();
   if (error) throw error;
@@ -67,10 +73,25 @@ export async function getTopicById(id: string) {
   return data as Topic | null;
 }
 
+/**
+ * Ngôn ngữ của một chủ đề, suy từ category chứa nó.
+ *
+ * Trang học cần biết để chọn giọng đọc và câu hỏi cho đúng. Dữ liệu cũ chưa có
+ * cột `language` thì rơi về tiếng Anh — đúng với toàn bộ nội dung hiện có.
+ */
+export async function getTopicLanguage(topicId: string): Promise<Language> {
+  const { data } = await supabase
+    .from("topics")
+    .select("categories(language)")
+    .eq("id", topicId)
+    .maybeSingle<{ categories: { language: Language } | null }>();
+  return data?.categories?.language ?? DEFAULT_LANGUAGE;
+}
+
 export async function createTopic(
   name: string,
   description: string,
-  category_id: string | null,
+  category_id: string,
   options: { mode?: TopicMode; question_prompt?: string } = {}
 ) {
   const { data, error } = await supabase
@@ -125,15 +146,41 @@ export async function getCards(topicId?: string) {
  * thẻ nào — khi đó vẫn mượn từ chủ đề bất kỳ, vì thà nhiễu lệch chủ điểm còn
  * hơn để lộ đáp án đúng do chỉ hiện được 1-2 lựa chọn.
  */
+/**
+ * Thẻ từ chủ đề khác để làm đáp án nhiễu khi chủ đề hiện tại quá ít thẻ.
+ *
+ * Ưu tiên chủ đề cùng category (cùng chủ điểm nên nhiễu sát nghĩa hơn), thiếu
+ * thì mở rộng ra các category khác.
+ *
+ * Cả hai nhánh đều phải chặn theo NGÔN NGỮ: trộn thẻ tiếng Trung vào câu hỏi
+ * tiếng Anh thì trẻ loại trừ được đáp án chỉ bằng mặt chữ, không cần biết
+ * nghĩa — bài kiểm tra mất tác dụng.
+ */
 export async function getExtraDistractorCards(topicId: string, limit = 60) {
   const { data: topic } = await supabase
     .from("topics")
-    .select("category_id, mode")
+    .select("category_id, mode, categories(language)")
     .eq("id", topicId)
-    .maybeSingle();
+    .maybeSingle<{
+      category_id: string | null;
+      mode: TopicMode | null;
+      categories: { language: Language } | null;
+    }>();
 
-  const mode: TopicMode = (topic?.mode as TopicMode) ?? "word";
+  const mode: TopicMode = topic?.mode ?? "word";
+  const language: Language = topic?.categories?.language ?? DEFAULT_LANGUAGE;
 
+  const cardsOfTopics = async (topicIds: string[]) => {
+    if (topicIds.length === 0) return [] as Card[];
+    const { data } = await supabase
+      .from("cards")
+      .select("*")
+      .in("topic_id", topicIds)
+      .limit(limit);
+    return (data ?? []) as Card[];
+  };
+
+  // Cùng category thì đương nhiên cùng ngôn ngữ, không cần lọc thêm
   if (topic?.category_id) {
     const { data: siblings } = await supabase
       .from("topics")
@@ -141,31 +188,19 @@ export async function getExtraDistractorCards(topicId: string, limit = 60) {
       .eq("category_id", topic.category_id)
       .eq("mode", mode)
       .neq("id", topicId);
-    const siblingIds = (siblings ?? []).map((t) => t.id);
-    if (siblingIds.length > 0) {
-      const { data } = await supabase
-        .from("cards")
-        .select("*")
-        .in("topic_id", siblingIds)
-        .limit(limit);
-      if (data && data.length > 0) return data as Card[];
-    }
+    const cards = await cardsOfTopics((siblings ?? []).map((t) => t.id));
+    if (cards.length > 0) return cards;
   }
 
-  const { data: sameMode } = await supabase
+  // Mở rộng sang category khác — chỉ lấy category cùng ngôn ngữ
+  const { data: sameLanguage } = await supabase
     .from("topics")
-    .select("id")
+    .select("id, categories!inner(language)")
     .eq("mode", mode)
+    .eq("categories.language", language)
     .neq("id", topicId);
-  const ids = (sameMode ?? []).map((t) => t.id);
-  if (ids.length === 0) return [] as Card[];
 
-  const { data } = await supabase
-    .from("cards")
-    .select("*")
-    .in("topic_id", ids)
-    .limit(limit);
-  return (data ?? []) as Card[];
+  return cardsOfTopics((sameLanguage ?? []).map((t) => t.id));
 }
 
 export async function getCardById(id: string) {
@@ -191,6 +226,16 @@ export async function createCard(
     .single();
   if (error) throw error;
   return data as Card;
+}
+
+/** Thêm nhiều thẻ một lần — dùng cho chức năng nhập từ hàng loạt */
+export async function createCards(
+  rows: { topic_id: string; word: string; meaning_vi: string; image: string }[]
+) {
+  if (rows.length === 0) return [];
+  const { data, error } = await supabase.from("cards").insert(rows).select();
+  if (error) throw error;
+  return data as Card[];
 }
 
 export async function updateCard(id: string, updates: Partial<Card>) {

@@ -7,11 +7,22 @@ export interface Profile {
   updated_at: string;
 }
 
-/** Nhóm cấp cao: "Tiếng anh tiểu học", "Tiếng anh giao tiếp"... */
+/**
+ * Ngôn ngữ đang học.
+ *
+ * Đặt ở category chứ không ở topic: hàm chọn đáp án nhiễu gom theo category,
+ * để ở topic thì một câu hỏi tiếng Anh có thể nhận đáp án nhiễu tiếng Trung.
+ */
+export type Language = "en" | "zh";
+
+export const DEFAULT_LANGUAGE: Language = "en";
+
+/** Nhóm cấp cao: "Tiếng Anh tiểu học", "Tiếng Trung giao tiếp"... */
 export interface Category {
   id: string;
   name: string;
   description: string;
+  language: Language;
   created_at: string;
   updated_at: string;
 }
@@ -26,10 +37,10 @@ export interface Category {
  */
 export type TopicMode = "word" | "sentence";
 
-/** Chủ đề: "40 câu thông dụng lớp 1"... thuộc 1 category */
+/** Chủ đề: "40 câu thông dụng lớp 1"... luôn thuộc đúng 1 category */
 export interface Topic {
   id: string;
-  category_id: string | null;
+  category_id: string;
   name: string;
   description: string;
   image: string;
@@ -41,8 +52,11 @@ export interface Topic {
 }
 
 /**
- * Một thẻ học. Chủ đề `sentence` dùng chung bảng này: `word` chứa câu tiếng
- * Anh, `meaning_vi` chứa câu tiếng Việt, `image` bỏ trống.
+ * Một thẻ học. Chủ đề `sentence` dùng chung bảng này: `word` chứa câu ngoại
+ * ngữ, `meaning_vi` chứa câu tiếng Việt, `image` bỏ trống.
+ *
+ * `word` giữ nội dung theo ngôn ngữ của category chứa nó — tiếng Anh thì là từ
+ * tiếng Anh, tiếng Trung thì admin nhập kèm phiên âm ngay trong ô này.
  */
 export interface Card {
   id: string;

@@ -3,8 +3,20 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getCards, createCard, updateCard, deleteCard, getTopics } from "@/lib/db";
-import type { Card, Topic } from "@/lib/types";
+import {
+  getCards,
+  createCard,
+  createCards,
+  updateCard,
+  deleteCard,
+  getTopics,
+} from "@/lib/db";
+import {
+  parseImportText,
+  importPlaceholder,
+  importHint,
+} from "@/lib/import-cards";
+import type { Card, Topic, TopicMode } from "@/lib/types";
 import {
   Button,
   Card as AntCard,
@@ -17,7 +29,7 @@ import {
   Popconfirm,
   Empty,
 } from "antd";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Upload, AlertCircle } from "lucide-react";
 import { Screen } from "@/components/ui/Layout";
 
 const { Title, Text } = Typography;
@@ -37,10 +49,21 @@ function AdminCardsContent() {
   const [filterTopic, setFilterTopic] = useState(searchParams.get("topic_id") || "");
   const [saving, setSaving] = useState(false);
 
+  // Nhập từ hàng loạt
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTopicId, setImportTopicId] = useState("");
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+
   // Chủ đề mẫu câu chứa cả câu chứ không phải từ đơn: ô nhập phải rộng ra,
   // nhãn phải đổi, và ảnh thì không dùng đến
   const isSentence =
     topics.find((t) => t.id === topicId)?.mode === "sentence";
+
+  // Kiểu của chủ đề đang nhập quyết định định dạng mỗi dòng
+  const importMode: TopicMode =
+    topics.find((t) => t.id === importTopicId)?.mode ?? "word";
+  const parsed = parseImportText(importText, importMode);
 
   async function loadCards(tId?: string) {
     try {
@@ -133,6 +156,53 @@ function AdminCardsContent() {
     }
   };
 
+  /** Đang lọc theo chủ đề nào thì nhập thẳng vào chủ đề đó */
+  const openImport = () => {
+    setImportTopicId(filterTopic);
+    setImportText("");
+    setImportOpen(true);
+  };
+
+  const handleImport = async () => {
+    if (!importTopicId) {
+      message.error("Vui lòng chọn chủ đề để nhập từ");
+      return;
+    }
+    if (parsed.valid.length === 0) {
+      message.error("Chưa có dòng nào hợp lệ để nhập");
+      return;
+    }
+    setImporting(true);
+    try {
+      await createCards(
+        parsed.valid.map((r) => ({
+          topic_id: importTopicId,
+          word: r.word,
+          meaning_vi: r.meaning_vi,
+          // Chủ đề mẫu câu không dùng ảnh
+          image: importMode === "sentence" ? "" : r.image,
+        }))
+      );
+      message.success(`Đã nhập ${parsed.valid.length} thẻ`);
+      setImportOpen(false);
+      setImportText("");
+      // Nhập vào chủ đề khác bộ lọc hiện tại thì chuyển bộ lọc sang đó để thấy kết quả
+      if (filterTopic && filterTopic !== importTopicId) {
+        setFilterTopic(importTopicId);
+      }
+      loadCards(
+        filterTopic && filterTopic !== importTopicId
+          ? importTopicId
+          : filterTopic || undefined
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Lỗi không xác định";
+      message.error("Lỗi nhập từ: " + msg);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteCard(id);
@@ -159,14 +229,23 @@ function AdminCardsContent() {
           <Title level={4} className="mb-1">Quản lý Thẻ từ</Title>
           <Text type="secondary">Thêm, sửa, xóa thẻ từ vựng</Text>
         </div>
-        <Button
-          type="primary"
-          icon={<Plus size={18} />}
-          onClick={openCreate}
-          className="rounded-xl min-h-[44px]"
-        >
-          Thêm
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          <Button
+            icon={<Upload size={18} />}
+            onClick={openImport}
+            className="rounded-xl min-h-[44px]"
+          >
+            Nhập từ
+          </Button>
+          <Button
+            type="primary"
+            icon={<Plus size={18} />}
+            onClick={openCreate}
+            className="rounded-xl min-h-[44px]"
+          >
+            Thêm
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4">
@@ -318,6 +397,125 @@ function AdminCardsContent() {
                 className="rounded-xl"
               />
             </div>
+          )}
+        </div>
+      </Drawer>
+
+      {/* Nhập từ hàng loạt */}
+      <Drawer
+        title="Nhập từ hàng loạt"
+        placement="bottom"
+        onClose={() => setImportOpen(false)}
+        open={importOpen}
+        rootClassName="bottom-sheet"
+        styles={{ wrapper: { height: "auto" } }}
+        extra={
+          <Button
+            type="primary"
+            loading={importing}
+            disabled={!importTopicId || parsed.valid.length === 0}
+            onClick={handleImport}
+            className="rounded-xl"
+          >
+            Nhập {parsed.valid.length > 0 ? `${parsed.valid.length} thẻ` : ""}
+          </Button>
+        }
+      >
+        <div className="drawer-handle" />
+        <div className="max-w-lg mx-auto space-y-4">
+          <div>
+            <Text className="block mb-1 font-medium">Chủ đề</Text>
+            <Select
+              value={importTopicId || undefined}
+              onChange={(v) => setImportTopicId(v)}
+              placeholder="Chọn chủ đề để nhập vào"
+              size="large"
+              showSearch
+              optionFilterProp="label"
+              className="w-full rounded-xl"
+              options={topics.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+          </div>
+
+          {importTopicId && (
+            <>
+              <div>
+                <Text className="block mb-1 font-medium">Danh sách</Text>
+                <Text type="secondary" className="block mb-2 text-sm">
+                  {importHint(importMode)}
+                </Text>
+                <Input.TextArea
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={importPlaceholder(importMode)}
+                  autoSize={{ minRows: 6, maxRows: 14 }}
+                  className="rounded-xl font-mono text-sm"
+                />
+              </div>
+
+              {parsed.rows.length > 0 && (
+                <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+                  <Text className="block text-sm">
+                    <span className="font-medium text-green-600">
+                      {parsed.valid.length} dòng hợp lệ
+                    </span>
+                    {parsed.invalid.length > 0 && (
+                      <span className="text-red-500">
+                        {" · "}
+                        {parsed.invalid.length} dòng lỗi
+                      </span>
+                    )}
+                  </Text>
+
+                  {parsed.invalid.length > 0 && (
+                    <div className="space-y-1">
+                      {parsed.invalid.slice(0, 5).map((r) => (
+                        <div
+                          key={r.line}
+                          className="flex items-start gap-2 text-xs text-red-600"
+                        >
+                          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                          <span>
+                            Dòng {r.line}: {r.error} — &ldquo;{r.raw}&rdquo;
+                          </span>
+                        </div>
+                      ))}
+                      {parsed.invalid.length > 5 && (
+                        <Text type="secondary" className="text-xs">
+                          ...và {parsed.invalid.length - 5} dòng lỗi khác
+                        </Text>
+                      )}
+                    </div>
+                  )}
+
+                  {parsed.valid.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      <Text type="secondary" className="text-xs">
+                        Xem trước:
+                      </Text>
+                      {parsed.valid.slice(0, 3).map((r) => (
+                        <div key={r.line} className="text-xs text-gray-700">
+                          <span className="font-medium">{r.word}</span>
+                          {" → "}
+                          {r.meaning_vi}
+                          {r.image && importMode === "word" && (
+                            <span className="text-gray-400"> · có ảnh</span>
+                          )}
+                        </div>
+                      ))}
+                      {parsed.valid.length > 3 && (
+                        <Text type="secondary" className="text-xs">
+                          ...và {parsed.valid.length - 3} dòng nữa
+                        </Text>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </Drawer>
