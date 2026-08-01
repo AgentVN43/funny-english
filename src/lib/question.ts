@@ -4,11 +4,23 @@ import type { Card, Language, TopicMode } from "./types";
 /** Chỗ trong mẫu câu hỏi sẽ được thay bằng nghĩa tiếng Việt của thẻ */
 export const PROMPT_PLACEHOLDER = "{tu}";
 
-/** Tên ngôn ngữ dùng trong câu chữ hiển thị và câu hỏi đọc lên */
+/** Tên ngôn ngữ khi đứng riêng làm nhãn — viết hoa */
 export const LANGUAGE_NAME: Record<Language, string> = {
-  en: "tiếng Anh",
-  zh: "tiếng Trung",
+  en: "Tiếng Anh",
+  zh: "Tiếng Trung",
 };
+
+/**
+ * Tên ngôn ngữ khi nằm giữa câu: "Tên tiếng Anh của …", không phải
+ * "Tên Tiếng Anh của …".
+ *
+ * Chỉ hạ chữ cái đầu chứ không `toLowerCase()` cả chuỗi — "Anh", "Trung" là
+ * danh từ riêng, hạ hết thành "tiếng anh" là sai.
+ */
+function languageInSentence(language: Language): string {
+  const name = LANGUAGE_NAME[language];
+  return name.charAt(0).toLowerCase() + name.slice(1);
+}
 
 /** Mã ngôn ngữ cho bộ đọc — dùng cho cả giọng máy lẫn route /api/tts */
 export const SPEECH_LANG: Record<Language, string> = {
@@ -25,7 +37,7 @@ export const SPEECH_LANG: Record<Language, string> = {
 function defaultPrompt(mode: TopicMode, language: Language): string {
   return mode === "sentence"
     ? PROMPT_PLACEHOLDER
-    : `Tên ${LANGUAGE_NAME[language]} của ${PROMPT_PLACEHOLDER} là gì?`;
+    : `Tên ${languageInSentence(language)} của ${PROMPT_PLACEHOLDER} là gì?`;
 }
 
 /**
@@ -36,7 +48,7 @@ export function questionHeading(
   mode: TopicMode,
   language: Language = DEFAULT_LANGUAGE
 ): string {
-  const name = LANGUAGE_NAME[language];
+  const name = languageInSentence(language);
   return mode === "sentence"
     ? `Câu này ${name} nói thế nào?`
     : `Từ ${name} là gì?`;

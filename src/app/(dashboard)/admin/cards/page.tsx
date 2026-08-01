@@ -341,7 +341,7 @@ function AdminCardsContent() {
           </div>
           <div>
             <Text className="block mb-1 font-medium">
-              {isSentence ? "Câu tiếng Anh" : "Từ vựng (English)"}
+              {isSentence ? "Câu tiếng Anh/Trung" : "Từ vựng (English/Chinese)"}
             </Text>
             {isSentence ? (
               <Input.TextArea
