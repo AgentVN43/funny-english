@@ -83,39 +83,39 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const navItems: NavItem[] = [
-    { label: "Trang chủ", icon: <Home size={22} />, path: "/home" },
+    { label: "Trang Chủ", icon: <Home size={22} />, path: "/home" },
     {
-      label: "Tiến độ",
+      label: "Tiến Độ",
       icon: <BarChart3 size={22} />,
       path: "/progress",
       authOnly: true,
     },
     {
-      label: "Cài đặt",
+      label: "Cài Đặt",
       icon: <Settings size={22} />,
       path: "/settings",
       authOnly: true,
     },
     {
-      label: "Theo dõi học viên",
+      label: "Theo Dõi Học Viên",
       icon: <Users size={22} />,
       path: "/admin/students",
       adminOnly: true,
     },
     {
-      label: "Quản lý Categories",
+      label: "Quản Lý Danh Mục",
       icon: <FolderTree size={22} />,
       path: "/admin/categories",
       adminOnly: true,
     },
     {
-      label: "Quản lý Chủ đề",
+      label: "Quản Lý Chủ Đề",
       icon: <Layers size={22} />,
       path: "/admin/topics",
       adminOnly: true,
     },
     {
-      label: "Quản lý Thẻ",
+      label: "Quản Lý Thẻ",
       icon: <Newspaper size={22} />,
       path: "/admin/cards",
       adminOnly: true,
